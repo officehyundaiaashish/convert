@@ -1,11 +1,1595 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>index</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRANSFORMAT — File Converter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+<!-- Real conversion libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111111;
+    --surface2: #1a1a1a;
+    --border: #2a2a2a;
+    --accent: #e8ff3c;
+    --accent2: #ff6b35;
+    --text: #f0f0f0;
+    --muted: #666;
+    --success: #3cffa0;
+    --error: #ff3c6b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(232,255,60,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(232,255,60,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+  /* Header */
+  header {
+    padding: 32px 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 60px;
+  }
+
+  .logo {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+  .logo span { color: var(--accent); }
+
+  .badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 100px;
+  }
+
+  /* Hero */
+  .hero {
+    text-align: center;
+    margin-bottom: 64px;
+  }
+
+  .hero-tag {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    border: 1px solid rgba(232,255,60,0.3);
+    padding: 5px 14px;
+    border-radius: 100px;
+    margin-bottom: 24px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    font-size: clamp(42px, 8vw, 88px);
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -3px;
+    margin-bottom: 20px;
+  }
+
+  h1 em {
+    font-style: normal;
+    color: var(--accent);
+    -webkit-text-stroke: 0px;
+  }
+
+  .hero-sub {
+    color: var(--muted);
+    font-size: 16px;
+    max-width: 480px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  /* Category tabs */
+  .tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .tab {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    padding: 8px 18px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+  }
+
+  .tab:hover { border-color: var(--accent); color: var(--accent); }
+  .tab.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+
+  /* Conversion cards grid */
+  .converters-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+    margin-bottom: 48px;
+  }
+
+  .converter-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    transition: all 0.25s;
+    display: none;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .converter-card.visible {
+    display: flex;
+    animation: fadeUp 0.3s ease forwards;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .converter-card:hover {
+    border-color: rgba(232,255,60,0.3);
+    background: var(--surface2);
+    transform: translateY(-2px);
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+
+  .card-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(232,255,60,0.1);
+    color: var(--accent);
+    border: 1px solid rgba(232,255,60,0.2);
+  }
+
+  /* Drop zone */
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .dropzone:hover, .dropzone.dragover {
+    border-color: var(--accent);
+    background: rgba(232,255,60,0.04);
+  }
+
+  .dropzone input[type=file] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+
+  .dropzone-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+    display: block;
+  }
+
+  .dropzone-text {
+    font-size: 13px;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .dropzone-text strong {
+    color: var(--text);
+    display: block;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+
+  /* File info */
+  .file-info {
+    display: none;
+    background: rgba(60,255,160,0.06);
+    border: 1px solid rgba(60,255,160,0.2);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--success);
+    align-items: center;
+    gap: 10px;
+  }
+
+  .file-info.show { display: flex; }
+  .file-info .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Output format selector */
+  .format-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .format-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .format-btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 5px 12px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .format-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .format-btn.selected { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+
+  /* Convert button */
+  .convert-btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 10px;
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .convert-btn:hover { background: #f5ff6a; transform: translateY(-1px); box-shadow: 0 8px 24px rgba(232,255,60,0.25); }
+  .convert-btn:active { transform: translateY(0); }
+  .convert-btn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; box-shadow: none; }
+
+  /* Progress bar */
+  .progress-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 100px;
+    overflow: hidden;
+    display: none;
+  }
+
+  .progress-bar.show { display: block; }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    border-radius: 100px;
+    transition: width 0.4s ease;
+  }
+
+  /* Status messages */
+  .status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    display: none;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .status.show { display: flex; }
+  .status.success { background: rgba(60,255,160,0.08); color: var(--success); border: 1px solid rgba(60,255,160,0.2); }
+  .status.error { background: rgba(255,60,107,0.08); color: var(--error); border: 1px solid rgba(255,60,107,0.2); }
+
+  /* Supported formats footer */
+  .formats-footer {
+    text-align: center;
+    padding: 48px 0 32px;
+    border-top: 1px solid var(--border);
+  }
+
+  .formats-footer h3 {
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+
+  .format-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+  }
+
+  .format-pill {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    color: var(--muted);
+  }
+
+  /* Options section */
+  .options-toggle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+  }
+  .options-toggle:hover { color: var(--text); }
+
+  .options-panel {
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .options-panel.open { display: flex; }
+
+  .option-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .option-row select, .option-row input[type=number] {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 8px;
+    border-radius: 5px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid rgba(0,0,0,0.3);
+    border-top-color: #000;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Image tools grid */
+  .img-preview {
+    max-width: 100%;
+    max-height: 120px;
+    border-radius: 6px;
+    object-fit: contain;
+    display: none;
+    margin: 0 auto;
+  }
+  .img-preview.show { display: block; }
+
+  /* Bulk converter */
+  .bulk-note {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  @media (max-width: 600px) {
+    h1 { letter-spacing: -2px; }
+    .converters-grid { grid-template-columns: 1fr; }
+  }
+</style>
 </head>
 <body>
 
+<div class="container">
+  <header>
+    <div class="logo">TRANS<span>FORMAT</span></div>
+    <span class="badge">100% CLIENT-SIDE · NO UPLOAD</span>
+  </header>
+
+  <section class="hero">
+    <div class="hero-tag">★ Free · Fast · Private</div>
+    <h1>Convert <em>Any</em><br>File Format</h1>
+    <p class="hero-sub">Real conversions, entirely in your browser. Your files never leave your device.</p>
+  </section>
+
+  <!-- Category tabs -->
+  <div class="tabs">
+    <button class="tab active" data-cat="all">All</button>
+    <button class="tab" data-cat="document">Documents</button>
+    <button class="tab" data-cat="image">Images</button>
+    <button class="tab" data-cat="data">Data / Spreadsheet</button>
+    <button class="tab" data-cat="text">Text / Code</button>
+    <button class="tab" data-cat="audio">Audio</button>
+  </div>
+
+  <div class="converters-grid" id="grid">
+
+    <!-- ===================== DOCUMENT CONVERTERS ===================== -->
+
+    <!-- DOCX → HTML / TXT / Markdown -->
+    <div class="converter-card visible" data-cat="document">
+      <div class="card-header">
+        <span class="card-title">Word Document → Web / Text</span>
+        <span class="card-badge">DOCX</span>
+      </div>
+      <div class="dropzone" id="dz-docx">
+        <input type="file" accept=".docx" id="f-docx">
+        <span class="dropzone-icon">📄</span>
+        <div class="dropzone-text"><strong>Drop .docx file here</strong>or click to browse</div>
+      </div>
+      <div class="file-info" id="fi-docx"><span>✓</span><span class="fname" id="fn-docx"></span></div>
+      <div class="format-row">
+        <span class="format-label">Convert to:</span>
+        <button class="format-btn selected" data-group="docx" data-fmt="html">HTML</button>
+        <button class="format-btn" data-group="docx" data-fmt="txt">TXT</button>
+        <button class="format-btn" data-group="docx" data-fmt="md">Markdown</button>
+      </div>
+      <div class="progress-bar" id="pb-docx"><div class="progress-fill" id="pf-docx"></div></div>
+      <div class="status" id="st-docx"></div>
+      <button class="convert-btn" id="btn-docx">Convert File</button>
+    </div>
+
+    <!-- Image Converter (PNG/JPG/WebP/BMP) -->
+    <div class="converter-card visible" data-cat="image">
+      <div class="card-header">
+        <span class="card-title">Image Format Converter</span>
+        <span class="card-badge">IMG</span>
+      </div>
+      <div class="dropzone" id="dz-img">
+        <input type="file" accept="image/*" id="f-img">
+        <span class="dropzone-icon">🖼️</span>
+        <div class="dropzone-text"><strong>Drop any image here</strong>PNG · JPG · WebP · BMP · GIF</div>
+      </div>
+      <img class="img-preview" id="ip-img" alt="Preview">
+      <div class="file-info" id="fi-img"><span>✓</span><span class="fname" id="fn-img"></span></div>
+      <div class="format-row">
+        <span class="format-label">Convert to:</span>
+        <button class="format-btn selected" data-group="img" data-fmt="image/png">PNG</button>
+        <button class="format-btn" data-group="img" data-fmt="image/jpeg">JPG</button>
+        <button class="format-btn" data-group="img" data-fmt="image/webp">WebP</button>
+        <button class="format-btn" data-group="img" data-fmt="image/bmp">BMP</button>
+      </div>
+      <div class="format-row">
+        <span class="format-label">Quality:</span>
+        <input type="number" id="img-quality" min="10" max="100" value="92" style="width:60px"> <span style="font-family:monospace;font-size:11px;color:var(--muted)">%</span>
+      </div>
+      <div class="progress-bar" id="pb-img"><div class="progress-fill" id="pf-img"></div></div>
+      <div class="status" id="st-img"></div>
+      <button class="convert-btn" id="btn-img">Convert Image</button>
+    </div>
+
+    <!-- CSV ↔ JSON / Excel -->
+    <div class="converter-card visible" data-cat="data">
+      <div class="card-header">
+        <span class="card-title">CSV → JSON / Excel / TSV</span>
+        <span class="card-badge">CSV</span>
+      </div>
+      <div class="dropzone" id="dz-csv">
+        <input type="file" accept=".csv,.tsv,.txt" id="f-csv">
+        <span class="dropzone-icon">📊</span>
+        <div class="dropzone-text"><strong>Drop CSV / TSV here</strong>or click to browse</div>
+      </div>
+      <div class="file-info" id="fi-csv"><span>✓</span><span class="fname" id="fn-csv"></span></div>
+      <div class="format-row">
+        <span class="format-label">Convert to:</span>
+        <button class="format-btn selected" data-group="csv" data-fmt="json">JSON</button>
+        <button class="format-btn" data-group="csv" data-fmt="xlsx">Excel</button>
+        <button class="format-btn" data-group="csv" data-fmt="tsv">TSV</button>
+        <button class="format-btn" data-group="csv" data-fmt="html">HTML Table</button>
+      </div>
+      <div class="progress-bar" id="pb-csv"><div class="progress-fill" id="pf-csv"></div></div>
+      <div class="status" id="st-csv"></div>
+      <button class="convert-btn" id="btn-csv">Convert File</button>
+    </div>
+
+    <!-- JSON → CSV / Excel / YAML -->
+    <div class="converter-card visible" data-cat="data">
+      <div class="card-header">
+        <span class="card-title">JSON → CSV / Excel / YAML</span>
+        <span class="card-badge">JSON</span>
+      </div>
+      <div class="dropzone" id="dz-json">
+        <input type="file" accept=".json" id="f-json">
+        <span class="dropzone-icon">{ }</span>
+        <div class="dropzone-text"><strong>Drop .json file here</strong>or click to browse</div>
+      </div>
+      <div class="file-info" id="fi-json"><span>✓</span><span class="fname" id="fn-json"></span></div>
+      <div class="format-row">
+        <span class="format-label">Convert to:</span>
+        <button class="format-btn selected" data-group="json" data-fmt="csv">CSV</button>
+        <button class="format-btn" data-group="json" data-fmt="xlsx">Excel</button>
+        <button class="format-btn" data-group="json" data-fmt="yaml">YAML</button>
+        <button class="format-btn" data-group="json" data-fmt="xml">XML</button>
+      </div>
+      <div class="progress-bar" id="pb-json"><div class="progress-fill" id="pf-json"></div></div>
+      <div class="status" id="st-json"></div>
+      <button class="convert-btn" id="btn-json">Convert File</button>
+    </div>
+
+    <!-- Excel → CSV / JSON -->
+    <div class="converter-card visible" data-cat="data">
+      <div class="card-header">
+        <span class="card-title">Excel → CSV / JSON / HTML</span>
+        <span class="card-badge">XLSX</span>
+      </div>
+      <div class="dropzone" id="dz-xlsx">
+        <input type="file" accept=".xlsx,.xls,.ods" id="f-xlsx">
+        <span class="dropzone-icon">📈</span>
+        <div class="dropzone-text"><strong>Drop Excel file here</strong>.xlsx · .xls · .ods</div>
+      </div>
+      <div class="file-info" id="fi-xlsx"><span>✓</span><span class="fname" id="fn-xlsx"></span></div>
+      <div class="format-row">
+        <span class="format-label">Convert to:</span>
+        <button class="format-btn selected" data-group="xlsx" data-fmt="csv">CSV</button>
+        <button class="format-btn" data-group="xlsx" data-fmt="json">JSON</button>
+        <button class="format-btn" data-group="xlsx" data-fmt="html">HTML Table</button>
+        <button class="format-btn" data-group="xlsx" data-fmt="tsv">TSV</button>
+      </div>
+      <div class="progress-bar" id="pb-xlsx"><div class="progress-fill" id="pf-xlsx"></div></div>
+      <div class="status" id="st-xlsx"></div>
+      <button class="convert-btn" id="btn-xlsx">Convert File</button>
+    </div>
+
+    <!-- Markdown → HTML -->
+    <div class="converter-card visible" data-cat="text">
+      <div class="card-header">
+        <span class="card-title">Markdown → HTML / TXT</span>
+        <span class="card-badge">MD</span>
+      </div>
+      <div class="dropzone" id="dz-md">
+        <input type="file" accept=".md,.markdown,.txt" id="f-md">
+        <span class="dropzone-icon">✍️</span>
+        <div class="dropzone-text"><strong>Drop .md / .markdown here</strong>or click to browse</div>
+      </div>
+      <div class="file-info" id="fi-md"><span>✓</span><span class="fname" id="fn-md"></span></div>
+      <div class="format-row">
+        <span class="format-label">Convert to:</span>
+        <button class="format-btn selected" data-group="md" data-fmt="html">HTML</button>
+        <button class="format-btn" data-group="md" data-fmt="txt">Plain Text</button>
+        <button class="format-btn" data-group="md" data-fmt="htm-full">Full Page HTML</button>
+      </div>
+      <div class="progress-bar" id="pb-md"><div class="progress-fill" id="pf-md"></div></div>
+      <div class="status" id="st-md"></div>
+      <button class="convert-btn" id="btn-md">Convert File</button>
+    </div>
+
+    <!-- TXT → various -->
+    <div class="converter-card visible" data-cat="text">
+      <div class="card-header">
+        <span class="card-title">Text → HTML / JSON / CSV</span>
+        <span class="card-badge">TXT</span>
+      </div>
+      <div class="dropzone" id="dz-txt">
+        <input type="file" accept=".txt,.log,.text" id="f-txt">
+        <span class="dropzone-icon">📝</span>
+        <div class="dropzone-text"><strong>Drop .txt / .log here</strong>or click to browse</div>
+      </div>
+      <div class="file-info" id="fi-txt"><span>✓</span><span class="fname" id="fn-txt"></span></div>
+      <div class="format-row">
+        <span class="format-label">Convert to:</span>
+        <button class="format-btn selected" data-group="txt" data-fmt="html">HTML</button>
+        <button class="format-btn" data-group="txt" data-fmt="json">JSON Lines</button>
+        <button class="format-btn" data-group="txt" data-fmt="csv">CSV (lines)</button>
+      </div>
+      <div class="progress-bar" id="pb-txt"><div class="progress-fill" id="pf-txt"></div></div>
+      <div class="status" id="st-txt"></div>
+      <button class="convert-btn" id="btn-txt">Convert File</button>
+    </div>
+
+    <!-- Image Resizer -->
+    <div class="converter-card visible" data-cat="image">
+      <div class="card-header">
+        <span class="card-title">Image Resizer & Compressor</span>
+        <span class="card-badge">RESIZE</span>
+      </div>
+      <div class="dropzone" id="dz-resize">
+        <input type="file" accept="image/*" id="f-resize">
+        <span class="dropzone-icon">📐</span>
+        <div class="dropzone-text"><strong>Drop any image here</strong>Resize, compress, export</div>
+      </div>
+      <img class="img-preview" id="ip-resize" alt="Preview">
+      <div class="file-info" id="fi-resize"><span>✓</span><span class="fname" id="fn-resize"></span></div>
+      <div class="format-row">
+        <span class="format-label">Width (px):</span>
+        <input type="number" id="resize-w" placeholder="e.g. 800" style="width:90px">
+        <span class="format-label">Height:</span>
+        <input type="number" id="resize-h" placeholder="auto" style="width:90px">
+      </div>
+      <div class="format-row">
+        <span class="format-label">Output:</span>
+        <button class="format-btn selected" data-group="resize" data-fmt="image/png">PNG</button>
+        <button class="format-btn" data-group="resize" data-fmt="image/jpeg">JPG</button>
+        <button class="format-btn" data-group="resize" data-fmt="image/webp">WebP</button>
+      </div>
+      <div class="progress-bar" id="pb-resize"><div class="progress-fill" id="pf-resize"></div></div>
+      <div class="status" id="st-resize"></div>
+      <button class="convert-btn" id="btn-resize">Resize & Export</button>
+    </div>
+
+    <!-- SVG → PNG / JPG -->
+    <div class="converter-card visible" data-cat="image">
+      <div class="card-header">
+        <span class="card-title">SVG → PNG / JPG / WebP</span>
+        <span class="card-badge">SVG</span>
+      </div>
+      <div class="dropzone" id="dz-svg">
+        <input type="file" accept=".svg" id="f-svg">
+        <span class="dropzone-icon">✦</span>
+        <div class="dropzone-text"><strong>Drop .svg file here</strong>or click to browse</div>
+      </div>
+      <img class="img-preview" id="ip-svg" alt="Preview">
+      <div class="file-info" id="fi-svg"><span>✓</span><span class="fname" id="fn-svg"></span></div>
+      <div class="format-row">
+        <span class="format-label">Scale:</span>
+        <input type="number" id="svg-scale" value="2" min="1" max="8" style="width:50px">
+        <span style="font-family:monospace;font-size:11px;color:var(--muted)">x</span>
+        <span class="format-label" style="margin-left:12px">Output:</span>
+        <button class="format-btn selected" data-group="svg" data-fmt="image/png">PNG</button>
+        <button class="format-btn" data-group="svg" data-fmt="image/jpeg">JPG</button>
+        <button class="format-btn" data-group="svg" data-fmt="image/webp">WebP</button>
+      </div>
+      <div class="progress-bar" id="pb-svg"><div class="progress-fill" id="pf-svg"></div></div>
+      <div class="status" id="st-svg"></div>
+      <button class="convert-btn" id="btn-svg">Rasterize SVG</button>
+    </div>
+
+    <!-- Base64 Encode/Decode -->
+    <div class="converter-card visible" data-cat="text">
+      <div class="card-header">
+        <span class="card-title">File ↔ Base64</span>
+        <span class="card-badge">B64</span>
+      </div>
+      <div class="dropzone" id="dz-b64">
+        <input type="file" id="f-b64">
+        <span class="dropzone-icon">🔐</span>
+        <div class="dropzone-text"><strong>Drop any file here</strong>Encode to Base64 text</div>
+      </div>
+      <div class="file-info" id="fi-b64"><span>✓</span><span class="fname" id="fn-b64"></span></div>
+      <div class="format-row">
+        <span class="format-label">Output:</span>
+        <button class="format-btn selected" data-group="b64" data-fmt="b64">Base64 (.txt)</button>
+        <button class="format-btn" data-group="b64" data-fmt="dataurl">Data URL</button>
+      </div>
+      <div class="progress-bar" id="pb-b64"><div class="progress-fill" id="pf-b64"></div></div>
+      <div class="status" id="st-b64"></div>
+      <button class="convert-btn" id="btn-b64">Encode File</button>
+    </div>
+
+    <!-- Multiple Images → ZIP -->
+    <div class="converter-card visible" data-cat="image">
+      <div class="card-header">
+        <span class="card-title">Batch Images → ZIP</span>
+        <span class="card-badge">BATCH</span>
+      </div>
+      <div class="dropzone" id="dz-batch">
+        <input type="file" accept="image/*" multiple id="f-batch">
+        <span class="dropzone-icon">🗜️</span>
+        <div class="dropzone-text"><strong>Drop multiple images</strong>Convert all & download as ZIP</div>
+      </div>
+      <div class="file-info" id="fi-batch"><span>✓</span><span class="fname" id="fn-batch"></span></div>
+      <div class="format-row">
+        <span class="format-label">Convert all to:</span>
+        <button class="format-btn selected" data-group="batch" data-fmt="image/png">PNG</button>
+        <button class="format-btn" data-group="batch" data-fmt="image/jpeg">JPG</button>
+        <button class="format-btn" data-group="batch" data-fmt="image/webp">WebP</button>
+      </div>
+      <div class="progress-bar" id="pb-batch"><div class="progress-fill" id="pf-batch"></div></div>
+      <div class="status" id="st-batch"></div>
+      <button class="convert-btn" id="btn-batch">Convert & Download ZIP</button>
+    </div>
+
+    <!-- YAML ↔ JSON -->
+    <div class="converter-card visible" data-cat="text">
+      <div class="card-header">
+        <span class="card-title">YAML ↔ JSON</span>
+        <span class="card-badge">YAML</span>
+      </div>
+      <div class="dropzone" id="dz-yaml">
+        <input type="file" accept=".yaml,.yml,.json" id="f-yaml">
+        <span class="dropzone-icon">⚙️</span>
+        <div class="dropzone-text"><strong>Drop .yaml / .json here</strong>or click to browse</div>
+      </div>
+      <div class="file-info" id="fi-yaml"><span>✓</span><span class="fname" id="fn-yaml"></span></div>
+      <div class="format-row">
+        <span class="format-label">Convert to:</span>
+        <button class="format-btn selected" data-group="yaml" data-fmt="json">JSON</button>
+        <button class="format-btn" data-group="yaml" data-fmt="yaml">YAML</button>
+      </div>
+      <div class="progress-bar" id="pb-yaml"><div class="progress-fill" id="pf-yaml"></div></div>
+      <div class="status" id="st-yaml"></div>
+      <button class="convert-btn" id="btn-yaml">Convert File</button>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <div class="formats-footer">
+    <h3>Supported Formats</h3>
+    <div class="format-pills">
+      <span class="format-pill">DOCX</span><span class="format-pill">HTML</span>
+      <span class="format-pill">PNG</span><span class="format-pill">JPG</span>
+      <span class="format-pill">WebP</span><span class="format-pill">BMP</span>
+      <span class="format-pill">SVG</span><span class="format-pill">CSV</span>
+      <span class="format-pill">JSON</span><span class="format-pill">XLSX</span>
+      <span class="format-pill">TSV</span><span class="format-pill">YAML</span>
+      <span class="format-pill">XML</span><span class="format-pill">Markdown</span>
+      <span class="format-pill">Base64</span><span class="format-pill">ZIP</span>
+      <span class="format-pill">TXT</span><span class="format-pill">ODS</span>
+    </div>
+    <p style="margin-top:24px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">All conversions happen 100% in your browser. Zero data sent to servers.</p>
+  </div>
+</div>
+
+<!-- YAML parsing (tiny built-in) -->
+<script>
+// ============================================================
+//  UTILITIES
+// ============================================================
+
+const $ = id => document.getElementById(id);
+const formats = {}; // stores selected format per group
+
+function setFormat(group, fmt) {
+  formats[group] = fmt;
+}
+
+function getFormat(group) { return formats[group]; }
+
+function showStatus(id, type, msg) {
+  const el = $(id);
+  el.className = 'status show ' + type;
+  el.innerHTML = (type === 'success' ? '✓ ' : '✗ ') + msg;
+}
+
+function hideStatus(id) {
+  const el = $(id);
+  el.className = 'status';
+}
+
+function progress(pfId, pbId, pct) {
+  const pb = $(pbId), pf = $(pfId);
+  pb.classList.toggle('show', pct < 100 && pct > 0);
+  pf.style.width = pct + '%';
+}
+
+function readFileAsText(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = e => res(e.target.result);
+    r.onerror = rej;
+    r.readAsText(file);
+  });
+}
+
+function readFileAsArrayBuffer(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = e => res(e.target.result);
+    r.onerror = rej;
+    r.readAsArrayBuffer(file);
+  });
+}
+
+function readFileAsDataURL(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = e => res(e.target.result);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+function loadImageFromURL(url) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = url;
+  });
+}
+
+function imageToCanvas(img, w, h) {
+  const c = document.createElement('canvas');
+  c.width = w || img.naturalWidth;
+  c.height = h || img.naturalHeight;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+
+function canvasToBlob(canvas, mime, quality) {
+  return new Promise(res => canvas.toBlob(res, mime, quality / 100));
+}
+
+function extFromMime(mime) {
+  return { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/bmp': 'bmp' }[mime] || 'png';
+}
+
+function baseName(filename) {
+  return filename.replace(/\.[^.]+$/, '');
+}
+
+function downloadBlob(blob, filename) {
+  saveAs(blob, filename);
+}
+
+function downloadText(content, filename, mime) {
+  const blob = new Blob([content], { type: mime || 'text/plain' });
+  saveAs(blob, filename);
+}
+
+// ============================================================
+//  FORMAT BUTTON TOGGLE
+// ============================================================
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-group]');
+  if (!btn) return;
+  const group = btn.dataset.group;
+  document.querySelectorAll(`[data-group="${group}"]`).forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  formats[group] = btn.dataset.fmt;
+});
+
+// Initialize defaults
+['docx','img','csv','json','xlsx','md','txt','resize','svg','b64','batch','yaml'].forEach(g => {
+  const first = document.querySelector(`[data-group="${g}"]`);
+  if (first) formats[g] = first.dataset.fmt;
+});
+
+// ============================================================
+//  CATEGORY TABS
+// ============================================================
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const cat = tab.dataset.cat;
+    document.querySelectorAll('.converter-card').forEach(card => {
+      const show = cat === 'all' || card.dataset.cat === cat;
+      card.classList.toggle('visible', show);
+    });
+  });
+});
+
+// ============================================================
+//  DRAG & DROP (generic)
+// ============================================================
+document.querySelectorAll('.dropzone').forEach(dz => {
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault();
+    dz.classList.remove('dragover');
+    const input = dz.querySelector('input[type=file]');
+    if (e.dataTransfer.files.length) {
+      const dt = new DataTransfer();
+      Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f));
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change'));
+    }
+  });
+});
+
+// ============================================================
+//  SHOW FILE NAME helper
+// ============================================================
+function showFile(fiId, fnId, name) {
+  $(fiId).classList.add('show');
+  $(fnId).textContent = name;
+}
+
+// ============================================================
+//  1. DOCX CONVERTER
+// ============================================================
+$('f-docx').addEventListener('change', function() {
+  if (this.files[0]) showFile('fi-docx', 'fn-docx', this.files[0].name);
+});
+
+$('btn-docx').addEventListener('click', async () => {
+  const file = $('f-docx').files[0];
+  if (!file) { showStatus('st-docx', 'error', 'Please select a .docx file first'); return; }
+  const fmt = formats.docx;
+  const btn = $('btn-docx');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Converting…';
+  progress('pf-docx', 'pb-docx', 30);
+  hideStatus('st-docx');
+
+  try {
+    const ab = await readFileAsArrayBuffer(file);
+    const result = await mammoth.convertToHtml({ arrayBuffer: ab });
+    progress('pf-docx', 'pb-docx', 70);
+    const html = result.value;
+    const base = baseName(file.name);
+
+    if (fmt === 'html') {
+      downloadText(html, base + '.html', 'text/html');
+    } else if (fmt === 'txt') {
+      const txt = html.replace(/<[^>]+>/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+      downloadText(txt, base + '.txt', 'text/plain');
+    } else if (fmt === 'md') {
+      // Basic HTML → Markdown conversion
+      let md = html
+        .replace(/<h1[^>]*>(.*?)<\/h1>/gi, '# $1\n')
+        .replace(/<h2[^>]*>(.*?)<\/h2>/gi, '## $1\n')
+        .replace(/<h3[^>]*>(.*?)<\/h3>/gi, '### $1\n')
+        .replace(/<strong[^>]*>(.*?)<\/strong>/gi, '**$1**')
+        .replace(/<b[^>]*>(.*?)<\/b>/gi, '**$1**')
+        .replace(/<em[^>]*>(.*?)<\/em>/gi, '*$1*')
+        .replace(/<i[^>]*>(.*?)<\/i>/gi, '*$1*')
+        .replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n')
+        .replace(/<a href="([^"]+)"[^>]*>(.*?)<\/a>/gi, '[$2]($1)')
+        .replace(/<p[^>]*>(.*?)<\/p>/gi, '$1\n\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ')
+        .replace(/\n{3,}/g, '\n\n').trim();
+      downloadText(md, base + '.md', 'text/markdown');
+    }
+
+    progress('pf-docx', 'pb-docx', 100);
+    showStatus('st-docx', 'success', 'Converted successfully!');
+  } catch (e) {
+    showStatus('st-docx', 'error', 'Conversion failed: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Convert File';
+    setTimeout(() => progress('pf-docx', 'pb-docx', 0), 1000);
+  }
+});
+
+// ============================================================
+//  2. IMAGE CONVERTER
+// ============================================================
+$('f-img').addEventListener('change', async function() {
+  const file = this.files[0];
+  if (!file) return;
+  showFile('fi-img', 'fn-img', file.name);
+  const url = URL.createObjectURL(file);
+  const preview = $('ip-img');
+  preview.src = url;
+  preview.classList.add('show');
+});
+
+$('btn-img').addEventListener('click', async () => {
+  const file = $('f-img').files[0];
+  if (!file) { showStatus('st-img', 'error', 'Please select an image first'); return; }
+  const mime = formats.img;
+  const quality = parseInt($('img-quality').value) || 92;
+  const btn = $('btn-img');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Converting…';
+  progress('pf-img', 'pb-img', 40);
+  hideStatus('st-img');
+
+  try {
+    const url = URL.createObjectURL(file);
+    const img = await loadImageFromURL(url);
+    URL.revokeObjectURL(url);
+    const canvas = imageToCanvas(img, img.naturalWidth, img.naturalHeight);
+    progress('pf-img', 'pb-img', 75);
+    const blob = await canvasToBlob(canvas, mime, quality);
+    const ext = extFromMime(mime);
+    downloadBlob(blob, baseName(file.name) + '.' + ext);
+    progress('pf-img', 'pb-img', 100);
+    showStatus('st-img', 'success', `Converted to ${ext.toUpperCase()} (${(blob.size/1024).toFixed(1)} KB)`);
+  } catch(e) {
+    showStatus('st-img', 'error', 'Conversion failed: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Convert Image';
+    setTimeout(() => progress('pf-img', 'pb-img', 0), 1000);
+  }
+});
+
+// ============================================================
+//  3. CSV CONVERTER
+// ============================================================
+$('f-csv').addEventListener('change', function() {
+  if (this.files[0]) showFile('fi-csv', 'fn-csv', this.files[0].name);
+});
+
+function parseCSV(text) {
+  const rows = [];
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  lines.forEach(line => {
+    const row = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQ = !inQ; }
+      else if ((c === ',' || c === '\t') && !inQ) { row.push(cur.trim()); cur = ''; }
+      else cur += c;
+    }
+    row.push(cur.trim());
+    rows.push(row);
+  });
+  return rows;
+}
+
+$('btn-csv').addEventListener('click', async () => {
+  const file = $('f-csv').files[0];
+  if (!file) { showStatus('st-csv', 'error', 'Please select a CSV file'); return; }
+  const fmt = formats.csv;
+  const btn = $('btn-csv');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Converting…';
+  progress('pf-csv', 'pb-csv', 30);
+  hideStatus('st-csv');
+
+  try {
+    const text = await readFileAsText(file);
+    const rows = parseCSV(text);
+    const headers = rows[0];
+    const data = rows.slice(1);
+    const base = baseName(file.name);
+    progress('pf-csv', 'pb-csv', 65);
+
+    if (fmt === 'json') {
+      const json = data.map(row => {
+        const obj = {};
+        headers.forEach((h, i) => obj[h] = row[i] || '');
+        return obj;
+      });
+      downloadText(JSON.stringify(json, null, 2), base + '.json', 'application/json');
+    } else if (fmt === 'xlsx') {
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+      XLSX.writeFile(wb, base + '.xlsx');
+    } else if (fmt === 'tsv') {
+      const tsv = rows.map(r => r.join('\t')).join('\n');
+      downloadText(tsv, base + '.tsv', 'text/tab-separated-values');
+    } else if (fmt === 'html') {
+      let html = `<table border="1" cellpadding="6" style="border-collapse:collapse;font-family:sans-serif"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>`;
+      data.forEach(row => { html += `<tr>${row.map(c=>`<td>${c}</td>`).join('')}</tr>`; });
+      html += '</tbody></table>';
+      downloadText(html, base + '.html', 'text/html');
+    }
+
+    progress('pf-csv', 'pb-csv', 100);
+    showStatus('st-csv', 'success', `${rows.length} rows converted to ${fmt.toUpperCase()}`);
+  } catch(e) {
+    showStatus('st-csv', 'error', 'Conversion failed: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Convert File';
+    setTimeout(() => progress('pf-csv', 'pb-csv', 0), 1000);
+  }
+});
+
+// ============================================================
+//  4. JSON CONVERTER
+// ============================================================
+$('f-json').addEventListener('change', function() {
+  if (this.files[0]) showFile('fi-json', 'fn-json', this.files[0].name);
+});
+
+function jsonToYAML(obj, indent = 0) {
+  const pad = '  '.repeat(indent);
+  if (Array.isArray(obj)) {
+    return obj.map(item => pad + '- ' + jsonToYAML(item, indent + 1).trimStart()).join('\n');
+  } else if (typeof obj === 'object' && obj !== null) {
+    return Object.entries(obj).map(([k, v]) => {
+      if (typeof v === 'object') return `${pad}${k}:\n${jsonToYAML(v, indent + 1)}`;
+      return `${pad}${k}: ${v}`;
+    }).join('\n');
+  }
+  return String(obj);
+}
+
+function jsonToXML(obj, rootTag = 'root') {
+  function toXML(obj, tag) {
+    if (Array.isArray(obj)) return obj.map(item => toXML(item, 'item')).join('');
+    if (typeof obj === 'object' && obj !== null) {
+      const inner = Object.entries(obj).map(([k, v]) => toXML(v, k)).join('');
+      return `<${tag}>${inner}</${tag}>`;
+    }
+    return `<${tag}>${String(obj).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</${tag}>`;
+  }
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' + toXML(obj, rootTag);
+}
+
+$('btn-json').addEventListener('click', async () => {
+  const file = $('f-json').files[0];
+  if (!file) { showStatus('st-json', 'error', 'Please select a JSON file'); return; }
+  const fmt = formats.json;
+  const btn = $('btn-json');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Converting…';
+  progress('pf-json', 'pb-json', 30);
+  hideStatus('st-json');
+
+  try {
+    const text = await readFileAsText(file);
+    const obj = JSON.parse(text);
+    const base = baseName(file.name);
+    progress('pf-json', 'pb-json', 65);
+    const arr = Array.isArray(obj) ? obj : [obj];
+
+    if (fmt === 'csv') {
+      const headers = [...new Set(arr.flatMap(o => Object.keys(o)))];
+      const rows = [headers, ...arr.map(o => headers.map(h => (o[h] !== undefined ? String(o[h]) : '')))];
+      const csv = rows.map(r => r.map(v => `"${v.replace(/"/g,'""')}"`).join(',')).join('\n');
+      downloadText(csv, base + '.csv', 'text/csv');
+    } else if (fmt === 'xlsx') {
+      const ws = XLSX.utils.json_to_sheet(arr);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+      XLSX.writeFile(wb, base + '.xlsx');
+    } else if (fmt === 'yaml') {
+      const yaml = jsonToYAML(obj);
+      downloadText(yaml, base + '.yaml', 'text/yaml');
+    } else if (fmt === 'xml') {
+      const xml = jsonToXML(obj);
+      downloadText(xml, base + '.xml', 'text/xml');
+    }
+
+    progress('pf-json', 'pb-json', 100);
+    showStatus('st-json', 'success', `Converted to ${fmt.toUpperCase()} successfully`);
+  } catch(e) {
+    showStatus('st-json', 'error', 'Conversion failed: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Convert File';
+    setTimeout(() => progress('pf-json', 'pb-json', 0), 1000);
+  }
+});
+
+// ============================================================
+//  5. XLSX CONVERTER
+// ============================================================
+$('f-xlsx').addEventListener('change', function() {
+  if (this.files[0]) showFile('fi-xlsx', 'fn-xlsx', this.files[0].name);
+});
+
+$('btn-xlsx').addEventListener('click', async () => {
+  const file = $('f-xlsx').files[0];
+  if (!file) { showStatus('st-xlsx', 'error', 'Please select an Excel file'); return; }
+  const fmt = formats.xlsx;
+  const btn = $('btn-xlsx');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Converting…';
+  progress('pf-xlsx', 'pb-xlsx', 30);
+  hideStatus('st-xlsx');
+
+  try {
+    const ab = await readFileAsArrayBuffer(file);
+    const wb = XLSX.read(ab, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const base = baseName(file.name);
+    progress('pf-xlsx', 'pb-xlsx', 65);
+
+    if (fmt === 'csv') {
+      const csv = XLSX.utils.sheet_to_csv(ws);
+      downloadText(csv, base + '.csv', 'text/csv');
+    } else if (fmt === 'json') {
+      const json = XLSX.utils.sheet_to_json(ws);
+      downloadText(JSON.stringify(json, null, 2), base + '.json', 'application/json');
+    } else if (fmt === 'html') {
+      const html = XLSX.utils.sheet_to_html(ws);
+      downloadText(html, base + '.html', 'text/html');
+    } else if (fmt === 'tsv') {
+      const tsv = XLSX.utils.sheet_to_csv(ws, { FS: '\t' });
+      downloadText(tsv, base + '.tsv', 'text/tab-separated-values');
+    }
+
+    progress('pf-xlsx', 'pb-xlsx', 100);
+    showStatus('st-xlsx', 'success', `Converted to ${fmt.toUpperCase()} successfully`);
+  } catch(e) {
+    showStatus('st-xlsx', 'error', 'Conversion failed: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Convert File';
+    setTimeout(() => progress('pf-xlsx', 'pb-xlsx', 0), 1000);
+  }
+});
+
+// ============================================================
+//  6. MARKDOWN CONVERTER
+// ============================================================
+$('f-md').addEventListener('change', function() {
+  if (this.files[0]) showFile('fi-md', 'fn-md', this.files[0].name);
+});
+
+$('btn-md').addEventListener('click', async () => {
+  const file = $('f-md').files[0];
+  if (!file) { showStatus('st-md', 'error', 'Please select a Markdown file'); return; }
+  const fmt = formats.md;
+  const btn = $('btn-md');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Converting…';
+  progress('pf-md', 'pb-md', 40);
+  hideStatus('st-md');
+
+  try {
+    const text = await readFileAsText(file);
+    const base = baseName(file.name);
+    progress('pf-md', 'pb-md', 70);
+
+    if (fmt === 'html') {
+      const html = marked.parse(text);
+      downloadText(html, base + '.html', 'text/html');
+    } else if (fmt === 'txt') {
+      const txt = text.replace(/#{1,6} /g,'').replace(/\*\*(.*?)\*\*/g,'$1').replace(/\*(.*?)\*/g,'$1')
+        .replace(/\[(.*?)\]\(.*?\)/g,'$1').replace(/`{1,3}[^`]*`{1,3}/g,'').replace(/^\s*[-*+] /gm,'• ')
+        .replace(/^\s*\d+\. /gm,'  ').trim();
+      downloadText(txt, base + '.txt', 'text/plain');
+    } else if (fmt === 'htm-full') {
+      const body = marked.parse(text);
+      const full = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${base}</title>
+<style>body{font-family:Georgia,serif;max-width:800px;margin:60px auto;padding:0 24px;line-height:1.7;color:#222}
+h1,h2,h3{line-height:1.3}code{background:#f4f4f4;padding:2px 6px;border-radius:3px}
+pre{background:#f4f4f4;padding:16px;border-radius:6px;overflow:auto}
+blockquote{border-left:3px solid #ccc;margin:0;padding:0 16px;color:#666}</style>
+</head><body>${body}</body></html>`;
+      downloadText(full, base + '.html', 'text/html');
+    }
+
+    progress('pf-md', 'pb-md', 100);
+    showStatus('st-md', 'success', 'Converted successfully!');
+  } catch(e) {
+    showStatus('st-md', 'error', 'Conversion failed: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Convert File';
+    setTimeout(() => progress('pf-md', 'pb-md', 0), 1000);
+  }
+});
+
+// ============================================================
+//  7. TXT CONVERTER
+// ============================================================
+$('f-txt').addEventListener('change', function() {
+  if (this.files[0]) showFile('fi-txt', 'fn-txt', this.files[0].name);
+});
+
+$('btn-txt').addEventListener('click', async () => {
+  const file = $('f-txt').files[0];
+  if (!file) { showStatus('st-txt', 'error', 'Please select a text file'); return; }
+  const fmt = formats.txt;
+  const btn = $('btn-txt');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Converting…';
+  hideStatus('st-txt');
+
+  try {
+    const text = await readFileAsText(file);
+    const lines = text.split(/\r?\n/);
+    const base = baseName(file.name);
+
+    if (fmt === 'html') {
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${base}</title></head><body><pre style="font-family:monospace;white-space:pre-wrap">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre></body></html>`;
+      downloadText(html, base + '.html', 'text/html');
+    } else if (fmt === 'json') {
+      const json = lines.map((l, i) => ({ line: i + 1, text: l }));
+      downloadText(JSON.stringify(json, null, 2), base + '.json', 'application/json');
+    } else if (fmt === 'csv') {
+      const csv = 'line,text\n' + lines.map((l, i) => `${i+1},"${l.replace(/"/g,'""')}"`).join('\n');
+      downloadText(csv, base + '.csv', 'text/csv');
+    }
+
+    showStatus('st-txt', 'success', 'Converted successfully!');
+  } catch(e) {
+    showStatus('st-txt', 'error', 'Conversion failed: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Convert File';
+  }
+});
+
+// ============================================================
+//  8. IMAGE RESIZER
+// ============================================================
+$('f-resize').addEventListener('change', async function() {
+  const file = this.files[0];
+  if (!file) return;
+  showFile('fi-resize', 'fn-resize', file.name);
+  const url = URL.createObjectURL(file);
+  const preview = $('ip-resize');
+  preview.src = url;
+  preview.classList.add('show');
+  const img = await loadImageFromURL(url);
+  if (!$('resize-w').value) $('resize-w').value = img.naturalWidth;
+  if (!$('resize-h').value) $('resize-h').value = img.naturalHeight;
+});
+
+$('btn-resize').addEventListener('click', async () => {
+  const file = $('f-resize').files[0];
+  if (!file) { showStatus('st-resize', 'error', 'Please select an image'); return; }
+  const mime = formats.resize;
+  const w = parseInt($('resize-w').value);
+  const h = parseInt($('resize-h').value) || null;
+  const btn = $('btn-resize');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Resizing…';
+  progress('pf-resize', 'pb-resize', 40);
+  hideStatus('st-resize');
+
+  try {
+    const url = URL.createObjectURL(file);
+    const img = await loadImageFromURL(url);
+    URL.revokeObjectURL(url);
+    const aspect = img.naturalHeight / img.naturalWidth;
+    const finalH = h || Math.round(w * aspect);
+    const canvas = imageToCanvas(img, w, finalH);
+    progress('pf-resize', 'pb-resize', 75);
+    const blob = await canvasToBlob(canvas, mime, 92);
+    const ext = extFromMime(mime);
+    downloadBlob(blob, baseName(file.name) + `-${w}x${finalH}.${ext}`);
+    progress('pf-resize', 'pb-resize', 100);
+    showStatus('st-resize', 'success', `Resized to ${w}×${finalH} · ${(blob.size/1024).toFixed(1)} KB`);
+  } catch(e) {
+    showStatus('st-resize', 'error', 'Resize failed: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Resize & Export';
+    setTimeout(() => progress('pf-resize', 'pb-resize', 0), 1000);
+  }
+});
+
+// ============================================================
+//  9. SVG → RASTER
+// ============================================================
+$('f-svg').addEventListener('change', async function() {
+  const file = this.files[0];
+  if (!file) return;
+  showFile('fi-svg', 'fn-svg', file.name);
+  const url = URL.createObjectURL(file);
+  $('ip-svg').src = url;
+  $('ip-svg').classList.add('show');
+});
+
+$('btn-svg').addEventListener('click', async () => {
+  const file = $('f-svg').files[0];
+  if (!file) { showStatus('st-svg', 'error', 'Please select an SVG file'); return; }
+  const mime = formats.svg;
+  const scale = parseFloat($('svg-scale').value) || 2;
+  const btn = $('btn-svg');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Rasterizing…';
+  progress('pf-svg', 'pb-svg', 30);
+  hideStatus('st-svg');
+
+  try {
+    const url = URL.createObjectURL(file);
+    const img = await loadImageFromURL(url);
+    URL.revokeObjectURL(url);
+    const w = (img.naturalWidth || 800) * scale;
+    const h = (img.naturalHeight || 600) * scale;
+    const canvas = imageToCanvas(img, w, h);
+    progress('pf-svg', 'pb-svg', 75);
+    const blob = await canvasToBlob(canvas, mime, 95);
+    const ext = extFromMime(mime);
+    downloadBlob(blob, baseName(file.name) + '.' + ext);
+    progress('pf-svg', 'pb-svg', 100);
+    showStatus('st-svg', 'success', `Rasterized to ${w}×${h} ${ext.toUpperCase()}`);
+  } catch(e) {
+    showStatus('st-svg', 'error', 'Rasterization failed: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Rasterize SVG';
+    setTimeout(() => progress('pf-svg', 'pb-svg', 0), 1000);
+  }
+});
+
+// ============================================================
+//  10. BASE64 ENCODER
+// ============================================================
+$('f-b64').addEventListener('change', function() {
+  if (this.files[0]) showFile('fi-b64', 'fn-b64', this.files[0].name);
+});
+
+$('btn-b64').addEventListener('click', async () => {
+  const file = $('f-b64').files[0];
+  if (!file) { showStatus('st-b64', 'error', 'Please select a file'); return; }
+  const fmt = formats.b64;
+  const btn = $('btn-b64');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Encoding…';
+  progress('pf-b64', 'pb-b64', 40);
+  hideStatus('st-b64');
+
+  try {
+    const dataurl = await readFileAsDataURL(file);
+    const base64 = dataurl.split(',')[1];
+    progress('pf-b64', 'pb-b64', 80);
+    if (fmt === 'b64') {
+      downloadText(base64, baseName(file.name) + '-base64.txt', 'text/plain');
+    } else {
+      downloadText(dataurl, baseName(file.name) + '-dataurl.txt', 'text/plain');
+    }
+    progress('pf-b64', 'pb-b64', 100);
+    showStatus('st-b64', 'success', `Encoded! Output: ${(base64.length/1024).toFixed(1)} KB`);
+  } catch(e) {
+    showStatus('st-b64', 'error', 'Encoding failed: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Encode File';
+    setTimeout(() => progress('pf-b64', 'pb-b64', 0), 1000);
+  }
+});
+
+// ============================================================
+//  11. BATCH IMAGE CONVERTER → ZIP
+// ============================================================
+let batchFiles = [];
+
+$('f-batch').addEventListener('change', function() {
+  batchFiles = Array.from(this.files);
+  showFile('fi-batch', 'fn-batch', `${batchFiles.length} files selected`);
+});
+
+$('btn-batch').addEventListener('click', async () => {
+  if (!batchFiles.length) { showStatus('st-batch', 'error', 'Please select image files'); return; }
+  const mime = formats.batch;
+  const btn = $('btn-batch');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Converting…';
+  progress('pf-batch', 'pb-batch', 10);
+  hideStatus('st-batch');
+
+  try {
+    const zip = new JSZip();
+    const ext = extFromMime(mime);
+    for (let i = 0; i < batchFiles.length; i++) {
+      const file = batchFiles[i];
+      const url = URL.createObjectURL(file);
+      const img = await loadImageFromURL(url);
+      URL.revokeObjectURL(url);
+      const canvas = imageToCanvas(img);
+      const blob = await canvasToBlob(canvas, mime, 92);
+      zip.file(baseName(file.name) + '.' + ext, blob);
+      progress('pf-batch', 'pb-batch', 10 + Math.round((i + 1) / batchFiles.length * 80));
+    }
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    saveAs(zipBlob, 'converted-images.zip');
+    progress('pf-batch', 'pb-batch', 100);
+    showStatus('st-batch', 'success', `${batchFiles.length} images → ZIP (${(zipBlob.size/1024).toFixed(0)} KB)`);
+  } catch(e) {
+    showStatus('st-batch', 'error', 'Batch conversion failed: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Convert & Download ZIP';
+    setTimeout(() => progress('pf-batch', 'pb-batch', 0), 1000);
+  }
+});
+
+// ============================================================
+//  12. YAML ↔ JSON
+// ============================================================
+$('f-yaml').addEventListener('change', function() {
+  if (this.files[0]) showFile('fi-yaml', 'fn-yaml', this.files[0].name);
+});
+
+// Tiny YAML parser (covers simple cases)
+function parseYAML(text) {
+  // For complex YAML this would need a library; we handle basic key:value and lists
+  const lines = text.split(/\r?\n/);
+  const result = {};
+  let currentKey = null;
+  let listMode = false;
+  let list = [];
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (!line || line.trim().startsWith('#')) continue;
+    const listMatch = line.match(/^(\s*)- (.*)$/);
+    const kvMatch = line.match(/^(\s*)([^:]+):\s*(.*)$/);
+
+    if (listMatch && currentKey) {
+      list.push(listMatch[2].trim());
+      result[currentKey] = list;
+    } else if (kvMatch) {
+      const key = kvMatch[2].trim();
+      const val = kvMatch[3].trim();
+      currentKey = key; list = [];
+      if (val === '') { result[key] = null; }
+      else if (val === 'true') result[key] = true;
+      else if (val === 'false') result[key] = false;
+      else if (!isNaN(Number(val))) result[key] = Number(val);
+      else result[key] = val.replace(/^['"]|['"]$/g,'');
+    }
+  }
+  return result;
+}
+
+function objToYAML(obj, indent = 0) {
+  return jsonToYAML(obj, indent);
+}
+
+$('btn-yaml').addEventListener('click', async () => {
+  const file = $('f-yaml').files[0];
+  if (!file) { showStatus('st-yaml', 'error', 'Please select a file'); return; }
+  const fmt = formats.yaml;
+  const btn = $('btn-yaml');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Converting…';
+  hideStatus('st-yaml');
+
+  try {
+    const text = await readFileAsText(file);
+    const base = baseName(file.name);
+    const isJSON = file.name.endsWith('.json');
+
+    if (fmt === 'json') {
+      const obj = isJSON ? JSON.parse(text) : parseYAML(text);
+      downloadText(JSON.stringify(obj, null, 2), base + '.json', 'application/json');
+      showStatus('st-yaml', 'success', 'Converted to JSON!');
+    } else {
+      const obj = isJSON ? JSON.parse(text) : parseYAML(text);
+      const yaml = objToYAML(obj);
+      downloadText(yaml, base + '.yaml', 'text/yaml');
+      showStatus('st-yaml', 'success', 'Converted to YAML!');
+    }
+  } catch(e) {
+    showStatus('st-yaml', 'error', 'Conversion failed: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Convert File';
+  }
+});
+</script>
 </body>
 </html>
