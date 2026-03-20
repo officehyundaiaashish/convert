@@ -1579,30 +1579,58 @@ function buildSystem(){
   const s = document.getElementById('caseStyle').value;
   const customFmt = s==='custom' ? document.getElementById('customFormat').value.trim() : '';
 
-  const caseInstr = {
-    natural:  'Title Case preferred — keep codes/IDs/VINs uppercase as-is.',
-    original: 'Keep original casing.',
-    sentence: 'Sentence case preferred.',
-    lower:    'Lowercase preferred.',
-    upper:    'UPPERCASE preferred.',
-    custom:   customFmt || '',
-  }[s] || '';
+  const caseLabel = {
+    natural:  'Title Case',
+    original: 'Original Case (keep as-is)',
+    sentence: 'Sentence case',
+    lower:    'all lowercase',
+    upper:    'ALL UPPERCASE',
+    custom:   customFmt || 'Title Case',
+  }[s] || 'Title Case';
 
   const devMode = isDevProject(selectedFiles);
 
-  return `You are a file organiser. Return raw JSON only — no markdown, no explanation.
-Every input file MUST appear in the output.
-Schema: {"original_filename": {"folder": "Folder/Subfolder", "newName": "New Name.ext"}}
-To exclude a file the user wants removed: {"original_filename": {"delete": true}}
-Max 3 folder levels. Forward slashes only.
+  return `You are a file organising assistant.
+Your ONLY job: return a valid JSON object. Nothing else.
+No explanation. No markdown. No extra text. Just JSON.
 
-RULES (apply in this order):
-1. If the user gives a prompt, follow it EXACTLY for every file it covers. User prompt is the highest priority.
-2. For files not covered by the user prompt, use file names, extensions, and dates to organise intelligently.
-3. Naming: ${caseInstr||'clean readable names'}. Spaces not underscores. Max 4 words. Never change extension. No extension word in name. Keep codes/IDs/VINs uppercase.
-4. Default folders: images→Images, videos→Videos, audio→Audio, executables→Software, documents→Documents.${devMode?'\n5. Code project — do NOT rename code or data files, only assign folders.':''}`
+OUTPUT FORMAT:
+{"exact_original_filename.ext": {"folder": "FolderName/SubFolder", "newName": "Clean New Name.ext"}}
+To delete: {"exact_original_filename.ext": {"delete": true}}
+
+STRICT RULES (never break these):
+R1. Every single input file MUST appear in output — no exceptions, no skipping
+R2. JSON key = exact original filename, character for character
+R3. Never change the file extension — ever
+R4. Never include the extension word in the filename (no "PDF Report", no "Image Photo", no "Video Clip")
+R5. Max 4 words in newName (not counting extension)
+R6. Use spaces — not underscores, not dashes
+R7. Max 3 folder levels deep, forward slashes only
+R8. Keep IDs, codes, VINs, serial numbers, and dates exactly as-is — always UPPERCASE
+R9. Any word that looks like an abbreviation or acronym must be UPPERCASE (examples: AGM, PWA, HR, PDF, API, GST, CEO, MOM, EOD, PO, MOU, LOI, etc.)
+
+NAMING STYLE — apply this to every filename: ${caseLabel}
+Note: R8 and R9 override naming style — acronyms and IDs are always UPPERCASE regardless of style.
+
+HOW TO PROCESS:
+STEP 1 → Read the user task carefully
+STEP 2 → Apply user task to EVERY file it mentions or clearly implies
+STEP 3 → For files the user task does not cover → use filename, date, and content clues
+STEP 4 → Assign folder + clean name to every single file — no file left behind
+
+DEFAULT FOLDERS (use only when user gives no instruction):
+Images/Photos → Images
+Videos → Videos
+Audio/Music → Audio
+PDF/Word/Text → Documents
+Excel/CSV → Spreadsheets
+ZIP/RAR/7z → Archives
+EXE/DMG/APK → Software
+JS/PY/HTML/CSS → Code
+Fonts → Fonts
+JSON/XML/ENV/SQL → Data
+Unknown → Other${devMode ? '\n\nCODE PROJECT: Do NOT rename code or data files, only move to folders.' : ''}`
 }
-
 // ─── Anthropic API adapter ───
 async function callAnthropic(key, model, messages, maxTokens){
   const sys    = messages.find(m=>m.role==='system')?.content||'';
@@ -2109,14 +2137,16 @@ async function organiseFiles(){
     const visionItems=batch.filter(f=>visionData[f]);
 
     const userMsg=[
-      userInstr
-        ? `User instruction: ${userInstr}`
-        : 'No user instruction — organise using file names, types, and dates.',
-      `File types present: ${typeHint}`,
-      isExp?'File contents are provided below — use them to understand each file.':'',
-      visionItems.length?`Image thumbnails attached for: ${visionItems.map(f=>f.split('/').pop()).join(', ')}`:'',
-      `Use the exact original filename (without date brackets) as the JSON key.`,
-      '\nFiles to organise:', fileListStr
+      '<user_task>',
+      userInstr ? userInstr : 'No specific instruction — organise intelligently using file names, types, and dates.',
+      '</user_task>',
+      `<summary>Total: ${total} files | Types: ${typeHint}</summary>`,
+      isExp ? '<note>File contents are provided in the file list — use them to understand each file.</note>' : '',
+      visionItems.length ? `<note>Image thumbnails attached for: ${visionItems.map(f=>f.split('/').pop()).join(', ')}</note>` : '',
+      '<files>',
+      fileListStr,
+      '</files>',
+      '<reminder>Output JSON only. Every file in <files> must appear. Use exact original filename as JSON key (no brackets).</reminder>'
     ].filter(Boolean).join('\n');
 
     let msgs;
