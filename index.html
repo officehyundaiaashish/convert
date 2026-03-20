@@ -53,10 +53,41 @@ h1 span{color:var(--accent);}
 .card-label{font-size:11px;font-weight:600;color:var(--muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px;}
 
 /* Inputs */
-input,select,textarea{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-family:inherit;font-size:13px;outline:none;transition:border-color 0.15s,box-shadow 0.15s;width:100%;}
-input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(108,71,255,0.12);}
-select option{background:var(--surface);}
+input:not([type=file]),textarea{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-family:inherit;font-size:13px;outline:none;transition:border-color 0.15s,box-shadow 0.15s;width:100%;}
+input:not([type=file]):focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(108,71,255,0.12);}
 textarea{resize:vertical;min-height:90px;line-height:1.6;}
+/* hide native selects — replaced by custom */
+select{display:none !important;}
+
+/* ── Custom Dropdown ── */
+.cd{position:relative;width:100%;}
+.cd-trigger{display:flex;align-items:center;justify-content:space-between;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 12px;cursor:pointer;font-size:13px;color:var(--text);user-select:none;transition:border-color 0.15s,box-shadow 0.15s;min-width:0;}
+.cd-trigger:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(108,71,255,0.12);}
+.cd-trigger.open{border-color:var(--accent);box-shadow:0 0 0 2px rgba(108,71,255,0.12);}
+.cd-value{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cd-arrow{font-size:10px;color:var(--muted);flex-shrink:0;transition:transform 0.2s;}
+.cd-trigger.open .cd-arrow{transform:rotate(180deg);}
+.cd-menu{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,0.12);z-index:9999;overflow:hidden;
+  transform-origin:top center;
+  animation:cdOpen 0.15s cubic-bezier(0.16,1,0.3,1) both;}
+[data-theme="dark"] .cd-menu{box-shadow:0 8px 24px rgba(0,0,0,0.45);}
+.cd-menu.closing{animation:cdClose 0.1s ease both;}
+.cd-search{padding:8px 10px;border-bottom:1px solid var(--border);}
+.cd-search input{padding:6px 10px;font-size:12px;}
+.cd-list{max-height:220px;overflow-y:auto;}
+.cd-list::-webkit-scrollbar{width:3px;}
+.cd-list::-webkit-scrollbar-thumb{background:var(--border);}
+.cd-group-label{padding:6px 12px 3px;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;}
+.cd-option{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;transition:background 0.1s;outline:none;}
+.cd-option:hover,.cd-option:focus{background:var(--surface2);}
+.cd-option.selected{color:var(--accent);background:rgba(108,71,255,0.06);}
+.cd-option.selected .cd-check{opacity:1;}
+.cd-check{font-size:11px;color:var(--accent);flex-shrink:0;opacity:0;margin-left:auto;}
+.cd-opt-icon{font-size:14px;flex-shrink:0;width:18px;text-align:center;}
+.cd-opt-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cd-opt-badge{font-size:10px;color:var(--muted);padding:1px 5px;border:1px solid var(--border);border-radius:4px;flex-shrink:0;}
+@keyframes cdOpen{from{opacity:0;transform:scaleY(0.92) translateY(-4px);}to{opacity:1;transform:scaleY(1) translateY(0);}}
+@keyframes cdClose{from{opacity:1;transform:scaleY(1);}to{opacity:0;transform:scaleY(0.92) translateY(-4px);}}
 
 /* Input row */
 .input-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
@@ -236,117 +267,260 @@ textarea{resize:vertical;min-height:90px;line-height:1.6;}
   .sg-3{grid-template-columns:1fr 1fr;}
   .select-methods{grid-template-columns:1fr 1fr;}
 }
+/* ── Agent display (Step 1) ── */
+.agent-display{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;}
+.agent-info-empty{flex:1;}
+.agent-info{flex:1;display:flex;align-items:center;gap:10px;}
+.agent-dot{width:8px;height:8px;border-radius:50%;background:var(--border);flex-shrink:0;}
+.agent-dot.connected{background:var(--accent3);box-shadow:0 0 6px var(--accent3);animation:pulse 2s ease infinite;}
+.agent-dot.testing{background:var(--warning);animation:pulse 0.5s ease infinite;}
+.agent-dot.failed{background:#c0392b;}
+.agent-name{font-size:13px;font-weight:600;}
+.agent-sub{font-size:11px;color:var(--muted);}
+.btn-manage{display:flex;align-items:center;gap:5px;padding:6px 12px;background:none;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;color:var(--muted);transition:all 0.15s;flex-shrink:0;}
+.btn-manage:hover{border-color:var(--accent);color:var(--accent);}
+.btn-manage svg{opacity:0.7;}
+
+/* ── Agent Manager Modal ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;
+  animation:modalBgIn 0.2s ease both;}
+[data-theme="dark"] .modal-overlay{background:rgba(0,0,0,0.65);}
+.modal-overlay.hidden{display:none;}
+.modal-box{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,0.15);overflow:hidden;
+  animation:modalIn 0.22s cubic-bezier(0.16,1,0.3,1) both;}
+[data-theme="dark"] .modal-box{box-shadow:0 20px 60px rgba(0,0,0,0.6);}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);}
+.modal-title{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;}
+.modal-close{background:none;border:none;cursor:pointer;color:var(--muted);padding:4px;border-radius:5px;display:flex;align-items:center;justify-content:center;transition:all 0.1s;}
+.modal-close:hover{background:var(--surface2);color:var(--text);}
+.modal-section{padding:14px 16px;border-bottom:1px solid var(--border);}
+.modal-section:last-of-type{border-bottom:none;}
+.modal-section-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;}
+.modal-input-row{display:flex;gap:6px;align-items:center;}
+.modal-input-row input{flex:1;min-width:0;}
+.modal-eye-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:8px;cursor:pointer;color:var(--muted);display:flex;align-items:center;flex-shrink:0;transition:all 0.1s;}
+.modal-eye-btn:hover{border-color:var(--accent);color:var(--accent);}
+.detected-provider{margin-top:6px;font-size:11px;padding:5px 10px;border-radius:6px;display:flex;align-items:center;gap:6px;}
+.detected-provider.or{background:rgba(108,71,255,0.07);color:var(--accent);border:1px solid rgba(108,71,255,0.15);}
+.detected-provider.groq{background:rgba(15,169,104,0.07);color:var(--accent3);border:1px solid rgba(15,169,104,0.15);}
+.detected-provider.unknown{background:rgba(200,100,0,0.07);color:var(--warning);border:1px solid rgba(200,100,0,0.15);}
+
+/* Agent list items */
+.agent-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:background 0.12s;border:1px solid transparent;}
+.agent-item:hover{background:var(--surface2);}
+.agent-item.active{background:rgba(108,71,255,0.06);border-color:rgba(108,71,255,0.2);}
+.ai-dot{width:8px;height:8px;border-radius:50%;background:var(--border);flex-shrink:0;transition:all 0.2s;}
+.agent-item.active .ai-dot{background:var(--accent3);box-shadow:0 0 5px var(--accent3);}
+.ai-name{font-size:13px;font-weight:500;flex:1;}
+.ai-badge{font-size:10px;color:var(--muted);padding:2px 6px;border:1px solid var(--border);border-radius:4px;flex-shrink:0;}
+.ai-status{font-size:10px;color:var(--accent3);flex-shrink:0;}
+.ai-del{background:none;border:none;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:2px 4px;border-radius:4px;flex-shrink:0;transition:all 0.1s;}
+.ai-del:hover{background:#fff0f0;color:#c0392b;}
+[data-theme="dark"] .ai-del:hover{background:#2a0000;color:#e06060;}
+.agent-list-empty{text-align:center;padding:20px;font-size:12px;color:var(--muted);}
+
+@keyframes modalBgIn{from{opacity:0}to{opacity:1}}
+@keyframes modalIn{from{opacity:0;transform:scale(0.94) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}
+
+/* Inline SVG icons */
+.ic{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+.ic svg{display:block;width:16px;height:16px;}
+.ic-sm svg{width:13px;height:13px;}
+.ic-lg svg{width:20px;height:20px;}
+.ic-xl svg{width:24px;height:24px;}
 </style>
 </head>
 <body>
 <div class="container">
+<!-- SVG sprite -->
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="ic-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="ic-folder-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1"/><path d="M3 15h18l-2 6H5z"/></symbol>
+  <symbol id="ic-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/></symbol>
+  <symbol id="ic-files" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></symbol>
+  <symbol id="ic-folders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M7 11h10"/></symbol>
+  <symbol id="ic-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M21 2l-9.6 9.6M15.5 7.5l2 2M13 10l2 2"/></symbol>
+  <symbol id="ic-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+  <symbol id="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+  <symbol id="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></symbol>
+  <symbol id="ic-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="ic-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="ic-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+  <symbol id="ic-archive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></symbol>
+  <symbol id="ic-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></symbol>
+  <symbol id="ic-video" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></symbol>
+  <symbol id="ic-music" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="ic-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></symbol>
+  <symbol id="ic-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="ic-table" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></symbol>
+  <symbol id="ic-type" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></symbol>
+  <symbol id="ic-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></symbol>
+  <symbol id="ic-brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2a2.5 2.5 0 0 1 5 0M9.5 2C7 2 5 4 5 6.5c0 1.5.7 2.8 1.8 3.7C5.7 11 5 12.4 5 14c0 2.8 2.2 5 5 5h4c2.8 0 5-2.2 5-5 0-1.6-.7-3-1.8-3.8C18.3 9.3 19 8 19 6.5 19 4 17 2 14.5 2"/><path d="M12 12v7M9 15h6"/></symbol>
+  <symbol id="ic-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="ic-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></symbol>
+  <symbol id="ic-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+  <symbol id="ic-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></symbol>
+  <symbol id="ic-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></symbol>
+  <symbol id="ic-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+  <symbol id="ic-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+  <symbol id="ic-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></symbol>
+  <symbol id="ic-collapse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/></symbol>
+  <symbol id="ic-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></symbol>
+  <symbol id="ic-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></symbol>
+  <symbol id="ic-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></symbol>
+</svg>
 
   <header>
     <div class="header-left">
-      <div class="logo">🗂</div>
+      <div class="logo"><span class="ic ic-xl"><svg><use href="#ic-folders"/></svg></span></div>
       <div>
         <h1>Folder<span>Mind</span></h1>
         <div class="tagline">AI File Organiser</div>
       </div>
     </div>
-    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Toggle light/dark">🌙</button>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Toggle light/dark"><span class="ic"><svg><use href="#ic-moon"/></svg></span></button>
+    </div>
   </header>
 
   <!-- Steps -->
   <div class="steps">
-    <div class="step active" id="step1"><div class="step-dot">1</div><div class="step-label">Setup</div></div>
+    <div class="step active" id="step1"><div class="step-dot">1</div><div class="step-label">Agent</div></div>
     <div class="step" id="step2"><div class="step-dot">2</div><div class="step-label">Files</div></div>
     <div class="step" id="step3"><div class="step-dot">3</div><div class="step-label">Prompt</div></div>
     <div class="step" id="step4"><div class="step-dot">4</div><div class="step-label">Preview</div></div>
     <div class="step" id="step5"><div class="step-dot">5</div><div class="step-label">Download</div></div>
   </div>
 
-  <!-- Step 1: API -->
+  <!-- Step 1: Agent selector -->
   <div class="card">
-    <div class="card-label">Step 1 — API Setup</div>
+    <div class="card-label">Step 1 — Select Agent</div>
 
-    <!-- Saved keys list -->
-    <div id="savedKeysList" class="saved-keys"></div>
-
-    <!-- Add new key -->
-    <div class="add-key-row" id="addKeyRow">
-      <input type="password" id="apiKey" placeholder="Paste API key..." oninput="resetApiStatus()" style="flex:1 1 160px;" />
-      <input type="text" id="keyNickname" placeholder="Nickname (e.g. My Groq)" style="flex:1 1 100px;" />
-      <button class="btn btn-secondary" onclick="toggleKeyVis()" title="Show/Hide">👁</button>
-      <button class="btn btn-secondary" id="testBtn" onclick="testApiKey()">Test</button>
-      <button class="btn btn-primary" onclick="saveNewKey()">Save</button>
-    </div>
-
-    <div class="api-status" id="apiStatus">
-      <div class="status-dot"></div>
-      <span id="apiStatusText">Enter a key above or select a saved one</span>
-    </div>
-
-    <div class="sg sg-3" style="margin-top:10px;">
-      <div>
-        <label>Provider</label>
-        <select id="providerSelect" onchange="updateModels()">
-          <option value="openrouter">OpenRouter (Free)</option>
-          <option value="groq">Groq (Fast &amp; Free)</option>
-        </select>
+    <!-- Active agent display + manage button -->
+    <div id="agentDisplay" class="agent-display">
+      <div id="agentInfo" class="agent-info-empty">
+        <span style="color:var(--muted);font-size:13px;">No agent connected</span>
       </div>
-      <div>
-        <label>Model</label>
-        <select id="modelSelect"></select>
+      <button class="btn-manage" onclick="openAgentManager()" title="Manage agents">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Manage
+      </button>
+    </div>
+
+    <!-- Model selector (shown after agent connected) -->
+    <div id="modelRow" class="hidden" style="margin-top:10px;">
+      <div class="sg sg-2">
+        <div>
+          <label>Model</label>
+          <div class="cd" id="cd-model">
+            <div class="cd-trigger" tabindex="0">
+              <span class="cd-value" id="cd-model-val">Select model…</span>
+              <span class="cd-arrow">▼</span>
+            </div>
+          </div>
+          <select id="modelSelect" style="display:none !important"></select>
+        </div>
+        <div>
+          <label>Name Style</label>
+          <div class="cd" id="cd-case">
+            <div class="cd-trigger" tabindex="0">
+              <span class="cd-value" id="cd-case-val">Title Case</span>
+              <span class="cd-arrow">▼</span>
+            </div>
+          </div>
+          <select id="caseStyle" style="display:none !important"><option value="natural">Title Case</option></select>
+        </div>
       </div>
-      <div>
-        <label>Name Style</label>
-        <select id="caseStyle" onchange="toggleCustomFormat()">
-          <option value="natural">Title Case</option>
-          <option value="sentence">Sentence case</option>
-          <option value="lower">all lowercase</option>
-          <option value="upper">ALL UPPERCASE</option>
-          <option value="original">Keep Original</option>
-          <option value="custom">Custom format…</option>
-        </select>
+      <!-- Custom format field -->
+      <div id="customFormatWrap" class="hidden" style="margin-top:8px;">
+        <label style="font-size:11px;color:var(--muted);font-weight:500;display:block;margin-bottom:4px;">Custom naming instruction</label>
+        <input type="text" id="customFormat" placeholder="e.g. YYYY-MM-DD prefix  /  camelCase  /  short snake_case" />
       </div>
     </div>
-    <!-- Custom format field — shown only when custom selected -->
-    <div id="customFormatWrap" class="hidden" style="margin-top:8px;">
-      <label style="font-size:11px;color:var(--muted);font-weight:500;display:block;margin-bottom:4px;">Custom naming instruction</label>
-      <input type="text" id="customFormat" placeholder="e.g. Short snake_case, max 3 words  /  YYYY-MM-DD prefix  /  camelCase" />
-      <div style="font-size:10px;color:var(--muted);margin-top:3px;">This instruction will be passed directly to the AI for naming files.</div>
-    </div>
-    <div style="margin-top:8px;font-size:11px;color:var(--muted);">
-      🔑 <a href="https://openrouter.ai" target="_blank" style="color:var(--accent);">openrouter.ai</a>
-      &nbsp;·&nbsp; ⚡ <a href="https://console.groq.com" target="_blank" style="color:var(--accent);">console.groq.com</a>
+
+    <!-- Hidden legacy selects for compat -->
+    <select id="providerSelect" style="display:none !important"><option value="openrouter">OpenRouter</option><option value="groq">Groq</option></select>
+    <input type="hidden" id="apiKey" />
+  </div>
+
+  <!-- Agent Manager Modal -->
+  <div id="agentModal" class="modal-overlay hidden" onclick="closeAgentManagerOutside(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Agent Manager
+        </div>
+        <button class="modal-close" onclick="closeAgentManager()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Add new key -->
+      <div class="modal-section">
+        <div class="modal-section-label">Add API Key</div>
+        <div class="modal-input-row">
+          <input type="password" id="modalApiKey" placeholder="Paste API key — provider auto-detected" autocomplete="off" oninput="autoDetectProvider()" />
+          <button class="modal-eye-btn" onclick="toggleModalKeyVis()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <div id="detectedProvider" class="detected-provider hidden"></div>
+        <div class="modal-input-row" style="margin-top:6px;">
+          <input type="text" id="modalNickname" placeholder="Nickname (optional — e.g. Work Key)" />
+          <button class="btn btn-primary" id="modalAddBtn" onclick="addAgent()" disabled style="flex-shrink:0;">Add</button>
+        </div>
+      </div>
+
+      <!-- Saved agents -->
+      <div class="modal-section">
+        <div class="modal-section-label">Saved Agents</div>
+        <div id="agentList"></div>
+      </div>
+
+      <div style="padding:12px 16px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);">
+        Keys stored locally in your browser only &nbsp;·&nbsp;
+        <a href="https://openrouter.ai" target="_blank" style="color:var(--accent);">OpenRouter</a> &nbsp;·&nbsp;
+        <a href="https://console.groq.com" target="_blank" style="color:var(--accent);">Groq</a>
+      </div>
     </div>
   </div>
 
   <!-- Step 2: Files -->
   <div class="card">
-    <div class="card-label">Step 2 — Select Files or Folder</div>
-    <div class="select-methods">
+    <div class="card-label">Step 2 — Select Files or Folders</div>
+    <div class="select-methods" style="grid-template-columns:1fr 1fr 1fr;">
       <div class="sm-btn" onclick="document.getElementById('fileInput').click()">
-        <div class="sm-icon">📄</div>
-        <div class="sm-title">Select Files</div>
-        <div class="sm-sub">Multiple files at once</div>
+        <div class="sm-icon"><span class="ic ic-lg"><svg><use href="#ic-files"/></svg></span></div>
+        <div class="sm-title">Files</div>
+        <div class="sm-sub">Multiple files</div>
       </div>
       <div class="sm-btn" onclick="document.getElementById('folderInput').click()">
-        <div class="sm-icon">📂</div>
-        <div class="sm-title">Select Folder</div>
-        <div class="sm-sub">Entire folder at once</div>
+        <div class="sm-icon"><span class="ic ic-lg"><svg><use href="#ic-folder"/></svg></span></div>
+        <div class="sm-title">Folder</div>
+        <div class="sm-sub">Single folder</div>
+      </div>
+      <div class="sm-btn" onclick="addMoreFolders()" id="multiFolderBtn">
+        <div class="sm-icon"><span class="ic ic-xl"><svg><use href="#ic-folders"/></svg></span></div>
+        <div class="sm-title">Multi-Folder</div>
+        <div class="sm-sub">Add many folders</div>
       </div>
     </div>
     <div class="dropzone" id="dropzone">
-      <span class="dz-icon">🗂</span>
+      <span class="dz-icon"><span class="ic ic-xl"><svg><use href="#ic-folders"/></svg></span></span>
       <div class="dz-title">Or drag &amp; drop here</div>
-      <div class="dz-sub">Drop files or a folder</div>
+      <div class="dz-sub">Drop files or folders — add multiple rounds</div>
     </div>
     <input type="file" id="fileInput" multiple style="display:none" />
     <input type="file" id="folderInput" webkitdirectory mozdirectory multiple style="display:none" />
+    <input type="file" id="extraFolderInput" webkitdirectory mozdirectory multiple style="display:none" />
 
     <!-- Selected files list with delete -->
     <div id="selectedFilesWrap" class="hidden">
       <div class="selected-files" id="selectedFilesList"></div>
     </div>
 
-    <div style="margin-top:9px;font-size:11px;color:var(--muted);">🔒 Files never leave your device</div>
+    <div style="margin-top:9px;font-size:11px;color:var(--muted);"><span class="ic ic-sm"><svg><use href="#ic-lock"/></svg></span> Files never leave your device — add as many folders as you want</div>
   </div>
 
   <!-- Step 3: Prompt -->
@@ -382,7 +556,7 @@ Examples:
       <button class="btn btn-primary" id="organiseBtn" onclick="organiseFiles()" disabled>
         Generate Preview
       </button>
-      <button class="btn btn-secondary" onclick="clearAll()">Clear All</button>
+      <button class="btn btn-secondary" onclick="clearAll()"><span class="ic ic-sm"><svg><use href="#ic-x"/></svg></span> Clear All</button>
       <span id="fileStatusInline" style="font-size:11px;color:var(--muted);flex:1;">No files selected yet</span>
     </div>
 
@@ -400,8 +574,8 @@ Examples:
 
     <!-- Before / After tabs -->
     <div class="struct-tabs">
-      <button class="struct-tab active" onclick="switchTab('before',this)">📁 Original Structure</button>
-      <button class="struct-tab" onclick="switchTab('after',this)">✨ Organised Structure</button>
+      <button class="struct-tab active" onclick="switchTab('before',this)"><span class="ic ic-sm"><svg><use href="#ic-folder"/></svg></span> Original Structure</button>
+      <button class="struct-tab" onclick="switchTab('after',this)"><span class="ic ic-sm"><svg><use href="#ic-spark"/></svg></span> Organised Structure</button>
     </div>
 
     <div id="panelBefore" class="struct-panel active">
@@ -419,15 +593,15 @@ Examples:
 • Move all PDFs into a single Documents folder
 • I want shorter folder names, max 2 words
 • Rename files to include the date at the start"></textarea>
-        <button class="btn btn-warn" id="reviseBtn" onclick="reviseFiles()">Revise</button>
+        <button class="btn btn-warn" id="reviseBtn" onclick="reviseFiles()"><span class="ic ic-sm"><svg><use href="#ic-refresh"/></svg></span> Revise</button>
       </div>
     </div>
 
     <!-- Bottom buttons -->
     <div class="results-actions">
-      <button class="btn btn-secondary" onclick="expandAll()">Expand All</button>
-      <button class="btn btn-secondary" onclick="collapseAll()">Collapse All</button>
-      <button class="btn btn-success" id="downloadBtn" onclick="downloadZip()">Download ZIP</button>
+      <button class="btn btn-secondary" onclick="expandAll()"><span class="ic ic-sm"><svg><use href="#ic-expand"/></svg></span> Expand All</button>
+      <button class="btn btn-secondary" onclick="collapseAll()"><span class="ic ic-sm"><svg><use href="#ic-collapse"/></svg></span> Collapse All</button>
+      <button class="btn btn-success" id="downloadBtn" onclick="downloadZip()"><span class="ic ic-sm"><svg><use href="#ic-download"/></svg></span> Download ZIP</button>
     </div>
 
     <div style="margin-top:8px;font-size:11px;color:var(--muted);">
@@ -439,6 +613,9 @@ Examples:
 <div class="toast" id="toast"></div>
 
 <script>
+// ── SVG icon helper ──
+function svg(id,cls=''){return`<span class="ic ${cls}"><svg><use href="#ic-${id}"/></svg></span>`;}
+
 let selectedFiles = [];
 let organiseResult = {};
 let conversationHistory = [];
@@ -446,182 +623,234 @@ let origFileMap = {}; // global — persists for download
 
 // ─── Theme ───
 function initTheme(){
-  const saved = localStorage.getItem('fm_theme') || 'light';
+  const saved = localStorage.getItem('fm_theme')||'light';
   document.body.setAttribute('data-theme', saved);
-  document.getElementById('themeBtn').textContent = saved==='dark'?'☀️':'🌙';
+  const btn = document.getElementById('themeBtn');
+  btn.innerHTML = saved==='dark'
+    ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'
+    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
 }
 function toggleTheme(){
   const next = document.body.getAttribute('data-theme')==='dark'?'light':'dark';
   document.body.setAttribute('data-theme', next);
-  document.getElementById('themeBtn').textContent = next==='dark'?'☀️':'🌙';
   localStorage.setItem('fm_theme', next);
-}
-initTheme();
-
-// ─── Multi-key storage ───
-// Format: [{id, nickname, provider, encodedKey, connected}]
-function encodeKey(k){ return btoa(unescape(encodeURIComponent(k.split('').reverse().join('')))); }
-function decodeKey(e){ try{ return decodeURIComponent(escape(atob(e))).split('').reverse().join(''); }catch{ return ''; } }
-
-function loadKeys(){ try{ return JSON.parse(localStorage.getItem('fm_keys')||'[]'); }catch{ return []; } }
-function saveKeys(keys){ localStorage.setItem('fm_keys', JSON.stringify(keys)); }
-
-let activeKeyId = localStorage.getItem('fm_activekey') || null;
-
-function renderSavedKeys(){
-  const keys = loadKeys();
-  const list = document.getElementById('savedKeysList');
-  if(!keys.length){ list.innerHTML=''; return; }
-  list.innerHTML = keys.map(k=>`
-    <div class="saved-key-row ${k.id===activeKeyId?'active-key':''}" onclick="selectKey('${k.id}')">
-      <div class="sk-dot"></div>
-      <span class="sk-name">${k.nickname||'Unnamed key'}</span>
-      <span class="sk-provider">${k.provider||'openrouter'}</span>
-      ${k.id===activeKeyId?'<span class="sk-status">● Active</span>':''}
-      <button class="sk-del" onclick="deleteKey(event,'${k.id}')" title="Delete">×</button>
-    </div>`).join('');
+  initTheme();
 }
 
-function saveNewKey(){
-  const rawKey = document.getElementById('apiKey').value.trim();
-  const nickname = document.getElementById('keyNickname').value.trim();
-  const provider = document.getElementById('providerSelect').value;
-  if(!rawKey){ showToast('Enter a key first','error'); return; }
+// ═══════════════════════════════
+// AGENT MANAGER
+// ═══════════════════════════════
+function enc(k){ return btoa(unescape(encodeURIComponent(k.split('').reverse().join('')))); }
+function dec(e){ try{ return decodeURIComponent(escape(atob(e))).split('').reverse().join(''); }catch{ return ''; } }
+function loadAgents(){ try{ return JSON.parse(localStorage.getItem('fm_agents')||'[]'); }catch{ return []; } }
+function saveAgents(a){ localStorage.setItem('fm_agents', JSON.stringify(a)); }
 
-  const keys = loadKeys();
-  const id = 'k_'+Date.now();
-  keys.push({ id, nickname: nickname||`Key ${keys.length+1}`, provider, encodedKey: encodeKey(rawKey) });
-  saveKeys(keys);
+let activeAgentId = localStorage.getItem('fm_activeagent')||null;
 
-  // Auto-select this key
-  activeKeyId = id;
-  localStorage.setItem('fm_activekey', id);
-
-  document.getElementById('apiKey').value = '';
-  document.getElementById('keyNickname').value = '';
-  renderSavedKeys();
-  showToast(`Key "${nickname||'Key '+keys.length}" saved!`,'success');
+// Provider auto-detect from key prefix/pattern
+function detectProvider(key){
+  if(!key) return null;
+  key = key.trim();
+  if(key.startsWith('sk-or-')) return 'openrouter';
+  if(key.startsWith('gsk_')) return 'groq';
+  if(key.startsWith('nvapi-')) return 'openrouter'; // nvidia via openrouter
+  if(key.length > 40 && key.startsWith('sk-')) return 'openrouter';
+  if(key.length === 56 && !key.includes('-or-')) return 'groq';
+  return 'openrouter'; // default
 }
 
-function selectKey(id){
-  const keys = loadKeys();
-  const k = keys.find(x=>x.id===id);
-  if(!k) return;
-
-  activeKeyId = id;
-  localStorage.setItem('fm_activekey', id);
-
-  // Load key into input + set provider
-  document.getElementById('apiKey').value = decodeKey(k.encodedKey);
-  document.getElementById('providerSelect').value = k.provider||'openrouter';
-  updateModels();
-  renderSavedKeys();
-  resetApiStatus();
-  showToast(`Switched to "${k.nickname}"`, 'info');
+function getProviderLabel(prov){
+  return prov==='groq' ? 'Groq' : 'OpenRouter';
 }
 
-function deleteKey(e, id){
-  e.stopPropagation();
-  let keys = loadKeys();
-  const k = keys.find(x=>x.id===id);
-  keys = keys.filter(x=>x.id!==id);
-  saveKeys(keys);
-  if(activeKeyId===id){
-    activeKeyId = keys.length ? keys[0].id : null;
-    localStorage.setItem('fm_activekey', activeKeyId||'');
-    if(activeKeyId) selectKey(activeKeyId);
-    else { document.getElementById('apiKey').value=''; resetApiStatus(); }
+function autoDetectProvider(){
+  const key = document.getElementById('modalApiKey').value.trim();
+  const btn = document.getElementById('modalAddBtn');
+  const det = document.getElementById('detectedProvider');
+  if(key.length < 8){ det.className='detected-provider hidden'; btn.disabled=true; return; }
+  const prov = detectProvider(key);
+  btn.disabled = false;
+  if(prov==='groq'){
+    det.className='detected-provider groq';
+    det.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Groq detected — fast &amp; free';
+  } else {
+    det.className='detected-provider or';
+    det.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> OpenRouter detected — 18 free models';
   }
-  renderSavedKeys();
-  showToast(`Deleted "${k?.nickname||'key'}"`, 'info');
+  det.classList.remove('hidden');
 }
 
-function autoLoadActiveKey(){
-  const keys = loadKeys();
-  if(!keys.length) return;
-  // Find active key or default to first
-  const target = keys.find(k=>k.id===activeKeyId) || keys[0];
-  if(!target) return;
-  activeKeyId = target.id;
-  localStorage.setItem('fm_activekey', target.id);
-  document.getElementById('apiKey').value = decodeKey(target.encodedKey);
-  document.getElementById('providerSelect').value = target.provider||'openrouter';
-  updateModels();
-  renderSavedKeys();
-  // Auto-test silently on load
-  silentTestKey(target);
+function toggleModalKeyVis(){
+  const inp = document.getElementById('modalApiKey');
+  inp.type = inp.type==='password'?'text':'password';
 }
 
-async function silentTestKey(keyObj){
-  const rawKey = decodeKey(keyObj.encodedKey);
+async function addAgent(){
+  const rawKey = document.getElementById('modalApiKey').value.trim();
+  const nickname = document.getElementById('modalNickname').value.trim();
   if(!rawKey) return;
+
+  const prov = detectProvider(rawKey);
+  const btn = document.getElementById('modalAddBtn');
+  btn.disabled = true;
+  btn.textContent = '...';
+
+  // Test the key
+  const ok = await testKeyQuick(rawKey, prov);
+
+  const agents = loadAgents();
+  const id = 'a_'+Date.now();
+  const defaultName = prov==='groq' ? 'Groq Agent' : 'OpenRouter Agent';
+  agents.push({ id, nickname: nickname||defaultName, provider:prov, encodedKey:enc(rawKey), connected:ok });
+  saveAgents(agents);
+
+  // Auto-activate
+  setActiveAgent(id);
+  renderAgentList();
+
+  document.getElementById('modalApiKey').value='';
+  document.getElementById('modalNickname').value='';
+  document.getElementById('detectedProvider').className='detected-provider hidden';
+  btn.disabled=true; btn.textContent='Add';
+
+  showToast(ok ? `Agent connected!` : `Agent saved (key may be invalid)`, ok?'success':'info');
+}
+
+async function testKeyQuick(rawKey, prov){
   try{
-    const prov = keyObj.provider||'openrouter';
     const endpoint = prov==='groq'
       ?'https://api.groq.com/openai/v1/chat/completions'
       :'https://openrouter.ai/api/v1/chat/completions';
-    const headers = {'Content-Type':'application/json','Authorization':`Bearer ${rawKey}`};
-    if(prov==='openrouter'){headers['HTTP-Referer']=window.location.href;headers['X-Title']='FolderMind';}
+    const headers={'Content-Type':'application/json','Authorization':`Bearer ${rawKey}`};
+    if(prov==='openrouter'){headers['HTTP-Referer']=location.href;headers['X-Title']='FolderMind';}
     const model = MODELS[prov]?.[0]?.value;
     const res = await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({model,messages:[{role:'user',content:'hi'}],max_tokens:3})});
-    const data = await res.json();
-    if(res.ok){
-      const short = (data.model||model||'').split('/').pop().replace(':free','');
-      setApiStatus('connected',`Connected — ${prov==='groq'?'Groq':'OpenRouter'}: ${short}`);
-    } else {
-      setApiStatus('failed',`Saved key error: ${data.error?.message?.slice(0,40)||'check key'}`);
-    }
-  }catch(e){ /* silent */ }
+    return res.ok;
+  }catch{ return false; }
 }
 
-// Init on page load
-renderSavedKeys();
-autoLoadActiveKey();
+function setActiveAgent(id){
+  activeAgentId = id;
+  localStorage.setItem('fm_activeagent', id);
+  const agents = loadAgents();
+  const agent = agents.find(a=>a.id===id);
+  if(!agent) return;
+
+  // Sync hidden fields
+  document.getElementById('apiKey').value = dec(agent.encodedKey);
+  document.getElementById('providerSelect').value = agent.provider||'openrouter';
+
+  // Update agent display
+  const info = document.getElementById('agentInfo');
+  info.className = 'agent-info';
+  info.innerHTML = `
+    <div class="agent-dot ${agent.connected?'connected':''}"></div>
+    <div>
+      <div class="agent-name">${escHtml(agent.nickname)}</div>
+      <div class="agent-sub">${getProviderLabel(agent.provider)} · ${agent.connected?'Connected':'Not verified'}</div>
+    </div>`;
+
+  // Show model row + init models
+  document.getElementById('modelRow').classList.remove('hidden');
+  initModelsDropdown();
+}
+
+function deleteAgent(e, id){
+  e.stopPropagation();
+  let agents = loadAgents();
+  const a = agents.find(x=>x.id===id);
+  agents = agents.filter(x=>x.id!==id);
+  saveAgents(agents);
+  if(activeAgentId===id){
+    activeAgentId = agents.length ? agents[0].id : null;
+    localStorage.setItem('fm_activeagent', activeAgentId||'');
+    if(activeAgentId) setActiveAgent(activeAgentId);
+    else {
+      document.getElementById('agentInfo').className='agent-info-empty';
+      document.getElementById('agentInfo').innerHTML='<span style="color:var(--muted);font-size:13px;">No agent connected</span>';
+      document.getElementById('modelRow').classList.add('hidden');
+    }
+  }
+  renderAgentList();
+  showToast(`Removed "${a?.nickname||'agent'}"`, 'info');
+}
+
+function renderAgentList(){
+  const agents = loadAgents();
+  const list = document.getElementById('agentList');
+  if(!list) return;
+  if(!agents.length){
+    list.innerHTML='<div class="agent-list-empty">No agents yet — add one above</div>';
+    return;
+  }
+  list.innerHTML = agents.map(a=>`
+    <div class="agent-item ${a.id===activeAgentId?'active':''}" onclick="setActiveAgent('${a.id}');renderAgentList();">
+      <div class="ai-dot"></div>
+      <div style="flex:1;">
+        <div class="ai-name">${escHtml(a.nickname)}</div>
+        <div style="font-size:10px;color:var(--muted);">${getProviderLabel(a.provider)}</div>
+      </div>
+      ${a.id===activeAgentId?'<span class="ai-status">Active</span>':''}
+      <span class="ai-badge">${a.provider==='groq'?'Groq':'OR'}</span>
+      <button class="ai-del" onclick="deleteAgent(event,'${a.id}')" title="Remove">×</button>
+    </div>`).join('');
+}
+
+function openAgentManager(){
+  document.getElementById('agentModal').classList.remove('hidden');
+  renderAgentList();
+  setTimeout(()=>document.getElementById('modalApiKey')?.focus(), 100);
+}
+function closeAgentManager(){
+  document.getElementById('agentModal').classList.add('hidden');
+}
+function closeAgentManagerOutside(e){
+  if(e.target===document.getElementById('agentModal')) closeAgentManager();
+}
+
+function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function autoLoadAgent(){
+  const agents = loadAgents();
+  if(!agents.length) return;
+  const target = agents.find(a=>a.id===activeAgentId)||agents[0];
+  if(!target) return;
+  setActiveAgent(target.id);
+}
+
+// Legacy compat shims (used by other parts of code)
+function resetApiStatus(){ /* no-op — agent display handles status */ }
+function setApiStatus(state, msg){ /* no-op */ }
+function toggleKeyVis(){ /* no-op */ }
 
 // ─── Models ───
 const MODELS = {
   openrouter:[
-    // ─── NVIDIA (Free) ───
-    {value:'nvidia/llama-3.1-nemotron-70b-instruct:free',       label:'NVIDIA Nemotron 70B ⭐'},
-    {value:'nvidia/llama-3.3-nemotron-super-49b-v1:free',       label:'NVIDIA Nemotron Super 49B'},
-    {value:'nvidia/nemotron-nano-9b-v2:free',                   label:'NVIDIA Nemotron Nano 9B'},
-    // ─── DeepSeek (Free) ───
-    {value:'deepseek/deepseek-r1:free',                         label:'DeepSeek R1 (Reasoning) 🧠'},
-    {value:'deepseek/deepseek-chat-v3-0324:free',               label:'DeepSeek V3 Chat'},
-    {value:'deepseek/deepseek-r1-distill-llama-70b:free',       label:'DeepSeek R1 Distill 70B'},
-    {value:'deepseek/deepseek-r1-0528-qwen3-8b:free',           label:'DeepSeek R1 Qwen3 8B'},
-    {value:'deepseek/deepseek-r1-distill-qwen-14b:free',        label:'DeepSeek R1 Qwen 14B'},
-    // ─── Meta Llama (Free) ───
-    {value:'meta-llama/llama-3.3-70b-instruct:free',            label:'Llama 3.3 70B Instruct'},
-    {value:'meta-llama/llama-3.1-8b-instruct:free',             label:'Llama 3.1 8B'},
-    // ─── Google (Free) ───
-    {value:'google/gemma-3-27b-it:free',                        label:'Gemma 3 27B'},
-    {value:'google/gemma-3-12b-it:free',                        label:'Gemma 3 12B'},
-    // ─── Qwen / Alibaba (Free) ───
-    {value:'qwen/qwen3-8b:free',                                label:'Qwen3 8B'},
-    {value:'qwen/qwen3-14b:free',                               label:'Qwen3 14B'},
-    {value:'qwen/qwen3-30b-a3b:free',                           label:'Qwen3 30B MoE'},
-    {value:'qwen/qwen-2.5-72b-instruct:free',                   label:'Qwen 2.5 72B'},
-    // ─── Mistral (Free) ───
-    {value:'mistralai/mistral-7b-instruct:free',                label:'Mistral 7B'},
-    // ─── Microsoft (Free) ───
-    {value:'microsoft/phi-4:free',                              label:'Microsoft Phi-4'},
+    {value:'nvidia/llama-3.1-nemotron-70b-instruct:free', label:'NVIDIA Nemotron 70B', group:'NVIDIA'},
+    {value:'nvidia/llama-3.3-nemotron-super-49b-v1:free', label:'NVIDIA Nemotron Super 49B', group:'NVIDIA'},
+    {value:'nvidia/nemotron-nano-9b-v2:free',             label:'NVIDIA Nemotron Nano 9B', group:'NVIDIA'},
+    {value:'deepseek/deepseek-r1:free',                   label:'DeepSeek R1 Reasoning', group:'DeepSeek'},
+    {value:'deepseek/deepseek-chat-v3-0324:free',         label:'DeepSeek V3 Chat', group:'DeepSeek'},
+    {value:'deepseek/deepseek-r1-distill-llama-70b:free', label:'DeepSeek R1 Distill 70B', group:'DeepSeek'},
+    {value:'deepseek/deepseek-r1-distill-qwen-14b:free',  label:'DeepSeek R1 Qwen 14B', group:'DeepSeek'},
+    {value:'meta-llama/llama-3.3-70b-instruct:free',      label:'Llama 3.3 70B', group:'Meta'},
+    {value:'meta-llama/llama-3.1-8b-instruct:free',       label:'Llama 3.1 8B', group:'Meta'},
+    {value:'google/gemma-3-27b-it:free',                  label:'Gemma 3 27B', group:'Google'},
+    {value:'google/gemma-3-12b-it:free',                  label:'Gemma 3 12B', group:'Google'},
+    {value:'qwen/qwen3-14b:free',                         label:'Qwen3 14B', group:'Qwen'},
+    {value:'qwen/qwen3-30b-a3b:free',                     label:'Qwen3 30B MoE', group:'Qwen'},
+    {value:'qwen/qwen-2.5-72b-instruct:free',             label:'Qwen 2.5 72B', group:'Qwen'},
+    {value:'mistralai/mistral-7b-instruct:free',          label:'Mistral 7B', group:'Mistral'},
+    {value:'microsoft/phi-4:free',                        label:'Microsoft Phi-4', group:'Microsoft'},
   ],
   groq:[
-    {value:'llama-3.1-8b-instant',      label:'Llama 3.1 8B Instant ⚡'},
-    {value:'llama3-70b-8192',           label:'Llama 3 70B'},
-    {value:'llama-3.3-70b-versatile',   label:'Llama 3.3 70B Versatile'},
-    {value:'mixtral-8x7b-32768',        label:'Mixtral 8x7B (32k)'},
-    {value:'gemma2-9b-it',              label:'Gemma 2 9B'},
-    {value:'llama3-8b-8192',            label:'Llama 3 8B'},
+    {value:'llama-3.1-8b-instant',     label:'Llama 3.1 8B Instant', group:'Groq'},
+    {value:'llama3-70b-8192',          label:'Llama 3 70B', group:'Groq'},
+    {value:'llama-3.3-70b-versatile',  label:'Llama 3.3 70B Versatile', group:'Groq'},
+    {value:'mixtral-8x7b-32768',       label:'Mixtral 8x7B 32k', group:'Groq'},
+    {value:'gemma2-9b-it',             label:'Gemma 2 9B', group:'Groq'},
   ]
 };
-function updateModels(){
-  const p=document.getElementById('providerSelect').value;
-  document.getElementById('modelSelect').innerHTML=MODELS[p].map(m=>`<option value="${m.value}">${m.label}</option>`).join('');
-  resetApiStatus();
-}
-updateModels();
 
 // ─── API helpers ───
 function getEndpoint(){
@@ -640,6 +869,7 @@ function getHeaders(key){
 // ─── File inputs ───
 document.getElementById('fileInput').addEventListener('change',e=>handleFiles(Array.from(e.target.files)));
 document.getElementById('folderInput').addEventListener('change',e=>handleFiles(Array.from(e.target.files)));
+document.getElementById('extraFolderInput').addEventListener('change',e=>handleFiles(Array.from(e.target.files)));
 const dz=document.getElementById('dropzone');
 dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
 dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
@@ -688,7 +918,7 @@ function renderSelectedFiles(){
   list.innerHTML = `
     <div class="sel-header">
       <strong>${selectedFiles.length} file${selectedFiles.length!==1?'s':''}</strong>
-      <button class="btn btn-danger" onclick="clearAll()" style="padding:3px 8px;font-size:11px;">Remove all</button>
+      <button class="btn btn-danger" onclick="clearAll()" style="padding:3px 8px;font-size:11px;"><span class="ic ic-sm"><svg><use href="#ic-trash"/></svg></span> Remove all</button>
     </div>
     ${selectedFiles.map((f,i)=>`
       <div class="sel-file">
@@ -719,6 +949,228 @@ function clearAll(){
 function setChip(el){
   document.getElementById('userPrompt').value=el.textContent;
   document.getElementById('userPrompt').focus();
+}
+
+// ═══════════════════════════════
+// CUSTOM DROPDOWN ENGINE
+// ═══════════════════════════════
+let openDropdown = null;
+
+const CD_DEFS = {
+  'cd-model': {
+    valId: 'cd-model-val',
+    syncId: 'modelSelect',
+    searchable: true,
+    grouped: true,
+    options: [], // populated by initModelsDropdown
+    onChange: () => {}
+  },
+  'cd-case': {
+    valId: 'cd-case-val',
+    syncId: 'caseStyle',
+    searchable: false,
+    options: [
+      {value:'natural',  label:'Title Case',    icon:'Aa'},
+      {value:'sentence', label:'Sentence case', icon:'Aa'},
+      {value:'lower',    label:'all lowercase', icon:'aa'},
+      {value:'upper',    label:'ALL UPPERCASE', icon:'AA'},
+      {value:'original', label:'Keep Original', icon:'—'},
+      {value:'custom',   label:'Custom format…',icon:'✏️'},
+    ],
+    onChange: (val) => {
+      document.getElementById('customFormatWrap').classList.toggle('hidden', val!=='custom');
+    }
+  },
+};
+
+function cdBuild(id){
+  const def = CD_DEFS[id];
+  const cd = document.getElementById(id);
+  const trigger = cd.querySelector('.cd-trigger');
+
+  // Remove old menu if any
+  const old = cd.querySelector('.cd-menu');
+  if(old) old.remove();
+
+  const menu = document.createElement('div');
+  menu.className = 'cd-menu';
+
+  if(def.searchable){
+    const sh = document.createElement('div');
+    sh.className = 'cd-search';
+    sh.innerHTML = '<input type="text" placeholder="Search models…" oninput="cdSearch(\''+id+'\',this.value)" onclick="event.stopPropagation()" />';
+    menu.appendChild(sh);
+  }
+
+  const list = document.createElement('div');
+  list.className = 'cd-list';
+  list.id = id+'-list';
+  menu.appendChild(list);
+  cd.appendChild(menu);
+  cdFillList(id, '');
+
+  trigger.onclick = (e) => { e.stopPropagation(); cdToggle(id); };
+}
+
+function cdFillList(id, search){
+  const def = CD_DEFS[id];
+  const list = document.getElementById(id+'-list');
+  if(!list) return;
+  const curVal = document.getElementById(def.syncId)?.value || '';
+  const q = search.toLowerCase();
+
+  if(def.grouped && def.options[0]?.group){
+    // Group rendering
+    list.innerHTML = '';
+    const groups = {};
+    def.options.forEach(o=>{
+      if(q && !o.label.toLowerCase().includes(q)) return;
+      const g = o.group||'Other';
+      if(!groups[g]) groups[g]=[];
+      groups[g].push(o);
+    });
+    for(const[grp,opts]of Object.entries(groups)){
+      const gl = document.createElement('div');
+      gl.className='cd-group-label'; gl.textContent=grp;
+      list.appendChild(gl);
+      opts.forEach(o=>list.appendChild(cdMakeOption(id,o,o.value===curVal)));
+    }
+  } else {
+    list.innerHTML = '';
+    def.options.forEach(o=>{
+      if(q && !o.label.toLowerCase().includes(q)) return;
+      list.appendChild(cdMakeOption(id,o,o.value===curVal));
+    });
+  }
+}
+
+function cdMakeOption(id, o, selected){
+  const el = document.createElement('div');
+  el.className = 'cd-option'+(selected?' selected':'');
+  el.dataset.value = o.value;
+  el.tabIndex = -1;
+  el.innerHTML = `<span class="cd-opt-icon">${o.icon||''}</span>`+
+    `<span class="cd-opt-label">${o.label}</span>`+
+    (o.badge?`<span class="cd-opt-badge">${o.badge}</span>`:'')+
+    `<span class="cd-check">✓</span>`;
+  el.onclick = (e) => { e.stopPropagation(); cdSelect(id, o.value, o.label); };
+  return el;
+}
+
+function cdSelect(id, value, label){
+  const def = CD_DEFS[id];
+  document.getElementById(def.valId).textContent = label;
+  const sel = document.getElementById(def.syncId);
+  if(sel) sel.value = value;
+  cdClose(id);
+  if(def.onChange) def.onChange(value);
+}
+
+function cdToggle(id){
+  if(openDropdown && openDropdown!==id) cdClose(openDropdown);
+  const cd = document.getElementById(id);
+  const trigger = cd.querySelector('.cd-trigger');
+  const menu = cd.querySelector('.cd-menu');
+  if(!menu) { cdBuild(id); cdToggle(id); return; }
+  const isOpen = trigger.classList.contains('open');
+  if(isOpen){ cdClose(id); } else {
+    trigger.classList.add('open');
+    menu.classList.remove('closing');
+    openDropdown = id;
+    // Search focus
+    const si = menu.querySelector('.cd-search input');
+    if(si) setTimeout(()=>si.focus(),50);
+  }
+}
+
+function cdClose(id){
+  const cd = document.getElementById(id);
+  if(!cd) return;
+  const trigger = cd.querySelector('.cd-trigger');
+  const menu = cd.querySelector('.cd-menu');
+  trigger?.classList.remove('open');
+  if(menu){ menu.classList.add('closing'); setTimeout(()=>{ if(menu.classList.contains('closing')){ menu.remove(); } },120); }
+  if(openDropdown===id) openDropdown=null;
+}
+
+function cdSearch(id, q){
+  cdFillList(id, q);
+}
+
+// Close on outside click
+document.addEventListener('click', ()=>{ if(openDropdown) cdClose(openDropdown); });
+
+// Keyboard navigation
+document.addEventListener('keydown', e=>{
+  if(!openDropdown) return;
+  const list = document.getElementById(openDropdown+'-list');
+  if(!list) return;
+  const opts = Array.from(list.querySelectorAll('.cd-option'));
+  const cur = list.querySelector('.cd-option:focus') || list.querySelector('.cd-option.selected');
+  const idx = cur ? opts.indexOf(cur) : -1;
+  if(e.key==='Escape'){ cdClose(openDropdown); e.preventDefault(); }
+  else if(e.key==='ArrowDown'){ e.preventDefault(); const n=opts[Math.min(idx+1,opts.length-1)]; if(n){n.focus();n.scrollIntoView({block:'nearest'});} }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); const n=opts[Math.max(idx-1,0)]; if(n){n.focus();n.scrollIntoView({block:'nearest'});} }
+  else if(e.key==='Enter' && cur){ cur.click(); e.preventDefault(); }
+});
+
+// Init provider dropdown on load
+function initCaseDropdown(){
+  cdBuild('cd-case');
+  cdSelect('cd-case','natural','Title Case');
+}
+
+// ═══════════════════════════════
+// MODELS — build grouped options
+// ═══════════════════════════════
+function initModelsDropdown(){
+  const prov = document.getElementById('providerSelect').value || 'openrouter';
+  const raw = MODELS[prov] || [];
+  // Build grouped options for openrouter
+  let opts;
+  if(prov==='openrouter'){
+    opts = raw.map(m=>{
+      const grp = m.value.startsWith('nvidia')?'NVIDIA':
+                  m.value.startsWith('deepseek')?'DeepSeek':
+                  m.value.startsWith('meta-llama')?'Meta Llama':
+                  m.value.startsWith('google')?'Google':
+                  m.value.startsWith('qwen')?'Qwen':
+                  m.value.startsWith('mistral')?'Mistral':
+                  m.value.startsWith('microsoft')?'Microsoft':'Other';
+      const ic = grp==='NVIDIA'?'🔵':grp==='DeepSeek'?'🟠':grp==='Meta Llama'?'🦙':
+                 grp==='Google'?'🔴':grp==='Qwen'?'🟡':grp==='Mistral'?'🌊':
+                 grp==='Microsoft'?'🪟':'🤖';
+      return {value:m.value, label:m.label.replace(' (Free)','').replace(' ⭐',''), icon:ic, badge:m.label.includes('⭐')?'⭐':m.label.includes('🧠')?'🧠':'', group:grp};
+    });
+  } else {
+    opts = raw.map(m=>({value:m.value, label:m.label, icon:'⚡', group:'Groq'}));
+  }
+  CD_DEFS['cd-model'].options = opts;
+  CD_DEFS['cd-model'].grouped = true;
+  // Set first as default
+  if(opts.length){
+    cdBuild('cd-model');
+    cdSelect('cd-model', opts[0].value, opts[0].label);
+    // Sync hidden select
+    const sel = document.getElementById('modelSelect');
+    sel.innerHTML = opts.map(o=>`<option value="${o.value}">${o.label}</option>`).join('');
+    sel.value = opts[0].value;
+  }
+}
+
+function updateModels(){ initModelsDropdown(); }
+
+// ═══════════════════════════════
+// MULTI-FOLDER SUPPORT
+// ═══════════════════════════════
+function addMoreFolders(){
+  // Create a fresh input each time for multi-folder adding
+  const inp = document.createElement('input');
+  inp.type='file'; inp.webkitdirectory=true; inp.mozdirectory=true; inp.multiple=true;
+  inp.style.display='none';
+  inp.onchange = e => { handleFiles(Array.from(e.target.files)); document.body.removeChild(inp); };
+  document.body.appendChild(inp);
+  inp.click();
 }
 
 function toggleCustomFormat(){
@@ -1334,29 +1786,6 @@ async function downloadZip(){
 }
 
 // ─── API test ───
-async function testApiKey(){
-  const key=document.getElementById('apiKey').value.trim();
-  if(!key){setApiStatus('failed','⚠ Enter API key first');return;}
-  const btn=document.getElementById('testBtn');
-  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
-  setApiStatus('testing','Testing...');
-  try{
-    const res=await fetch(getEndpoint(),{method:'POST',headers:getHeaders(key),body:JSON.stringify({model:document.getElementById('modelSelect').value,messages:[{role:'user',content:'Say OK'}],max_tokens:5})});
-    const data=await res.json();
-    if(!res.ok)throw new Error(data.error?.message||`Error ${res.status}`);
-    const short=(data.model||document.getElementById('modelSelect').value).split('/').pop().replace(':free','');
-    const prov=document.getElementById('providerSelect').value;
-    setApiStatus('connected',`Connected — ${prov==='groq'?'Groq':'OpenRouter'}: ${short}`);
-    showToast('API connected!','success');
-  }catch(err){
-    setApiStatus('failed',`Failed: ${err.message.slice(0,50)}`);
-    showToast('Check your API key','error');
-  }
-  btn.disabled=false; btn.innerHTML='Test';
-}
-function setApiStatus(state,msg){document.getElementById('apiStatus').className=`api-status ${state}`;document.getElementById('apiStatusText').textContent=msg;}
-function resetApiStatus(){setApiStatus('','Not tested — click Test to verify');}
-function toggleKeyVis(){const k=document.getElementById('apiKey');k.type=k.type==='password'?'text':'password';}
 
 // ─── Misc ───
 function icon(n){
@@ -1406,6 +1835,14 @@ function showToast(msg,type='info'){
   t.textContent=msg; t.className=`toast show ${type}`;
   clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('show'),3000);
 }
+
+// ─── Boot: run after all functions/consts defined ───
+(function boot(){
+  initTheme();
+  initCaseDropdown();
+  initModelsDropdown();
+  autoLoadAgent();
+})();
 </script>
 </body>
 </html>
