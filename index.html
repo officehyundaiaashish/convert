@@ -2020,6 +2020,56 @@ async function callAI(key,model,messages,maxTokens=8000){
   }
 }
 
+// ─── Shared: build the exact messages sent to AI ───
+// Used by BOTH organiseFiles AND generateDebugLog — single source of truth
+function buildAIMessages(batch, fileContext, visionData, userInstr, typeHint, total){
+  const isExp = currentMode === 'experimental';
+  const prov  = document.getElementById('providerSelect').value;
+  const useVision = isExp && (prov === 'gemini' || prov === 'openai');
+  const fmtDate = ts => {
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  };
+
+  const fileListStr = batch.map(f => {
+    const base = f.split('/').pop();
+    const file = origFileMap[f];
+    const date = file?.lastModified ? ` [${fmtDate(file.lastModified)}]` : '';
+    const ctx  = isExp && fileContext[f] ? ` | ${fileContext[f]}` : '';
+    return base + date + ctx;
+  }).join('\n');
+
+  const visionItems = batch.filter(f => visionData[f]);
+
+  const userMsg = [
+    '<user_task>',
+    userInstr ? userInstr : 'No specific instruction — organise intelligently using file names, types, and dates.',
+    '</user_task>',
+    `<summary>Total: ${total} files | Types: ${typeHint}</summary>`,
+    isExp ? '<note>File contents are included in the file list below — use them to understand and name each file accurately.</note>' : '',
+    isExp && visionItems.length ? `<note>Image thumbnails attached for: ${visionItems.map(f => f.split('/').pop()).join(', ')}</note>` : '',
+    '<files>',
+    fileListStr,
+    '</files>',
+    '<reminder>Output JSON only. Every file in <files> must appear. Use exact original filename as JSON key (no brackets).</reminder>'
+  ].filter(Boolean).join('\n');
+
+  const system = buildSystem();
+
+  let msgs;
+  if(useVision && visionItems.length){
+    const contentArr = [{type:'text', text:userMsg}];
+    for(const f of visionItems){
+      contentArr.push({type:'image_url', image_url:{url:`data:image/jpeg;base64,${visionData[f]}`}});
+    }
+    msgs = [{role:'system', content:system}, {role:'user', content:contentArr}];
+  } else {
+    msgs = [{role:'system', content:system}, {role:'user', content:userMsg}];
+  }
+
+  return { msgs, userMsg, system, fileListStr, visionItems };
+}
+
 // ─── Post-process AI result ───
 function postProcess(results){
   const devMode=isDevProject(selectedFiles);
@@ -2129,42 +2179,8 @@ async function organiseFiles(){
     setStatus(batches.length===1?`Organising ${total} files...`:`Batch ${b+1} of ${batches.length} — ${Math.round((b/batches.length)*100)}% done...`);
     setProgress(10+(b/batches.length)*65);
 
-    const fileListStr=batch.map(f=>{
-      const base=f.split('/').pop();
-      const file=origFileMap[f];
-      const date=file?.lastModified?` [${fmtDate(file.lastModified)}]`:'';
-      const ctx=isExp&&fileContext[f]?` | ${fileContext[f]}`:''; // experimental only
-      return base+date+ctx;
-    }).join('\n');
-
-    const visionItems=batch.filter(f=>visionData[f]);
-
-    const userMsg=[
-      '<user_task>',
-      userInstr ? userInstr : 'No specific instruction — organise intelligently using file names, types, and dates.',
-      '</user_task>',
-      `<summary>Total: ${total} files | Types: ${typeHint}</summary>`,
-      isExp ? '<note>File contents are included in the file list below — use them to understand and name each file accurately.</note>' : '',
-      isExp && visionItems.length ? `<note>Image thumbnails attached for: ${visionItems.map(f=>f.split('/').pop()).join(', ')}</note>` : '',
-      '<files>',
-      fileListStr,
-      '</files>',
-      '<reminder>Output JSON only. Every file in <files> must appear. Use exact original filename as JSON key (no brackets).</reminder>'
-    ].filter(Boolean).join('\n');
-
-    let msgs;
-    if(useVision&&visionItems.length){
-      // Build vision content array — text first, then images
-      const content=[{type:'text',text:userMsg}];
-      for(const f of visionItems){
-        // data URI format — works for both OpenAI and Gemini (callGemini converts to inlineData)
-        content.push({type:'image_url',image_url:{url:`data:image/jpeg;base64,${visionData[f]}`}});
-      }
-      msgs=[{role:'system',content:system},{role:'user',content}];
-    } else {
-      msgs=[{role:'system',content:system},{role:'user',content:userMsg}];
-    }
-
+    // Use shared buildAIMessages — same function as debug log uses
+    const {msgs, userMsg} = buildAIMessages(batch, fileContext, visionData, userInstr, typeHint, total);
     let parsed=await callAI(key,model,msgs,outTokens);
 
     if(parsed===null){
@@ -2618,18 +2634,20 @@ function showToast(msg,type='info'){
   clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('show'),3000);
 }
 
-// ─── Debug Log — shows exactly what gets sent to AI (both modes) ───
+// ─── Debug Log — shows EXACTLY what gets sent to AI ───
+// Uses the same buildAIMessages() as organiseFiles — guaranteed identical output
 async function generateDebugLog(){
   if(!selectedFiles.length){showToast('Select files first','error');return;}
   const btn=document.getElementById('debugLogBtn');
   btn.disabled=true; btn.innerHTML='<span class="ic ic-sm"><svg><use href="#ic-bug"/></svg></span> Reading...';
 
-  const model = document.getElementById('modelSelect').value||'(none selected)';
-  const prov  = document.getElementById('providerSelect').value||'(none)';
-  const userInstr = document.getElementById('userPrompt').value.trim();
-  const isExp = currentMode==='experimental';
-  const useVision = isExp;
+  const model    = document.getElementById('modelSelect').value||'(none selected)';
+  const prov     = document.getElementById('providerSelect').value||'(none)';
+  const userInstr= document.getElementById('userPrompt').value.trim();
+  const isExp    = currentMode==='experimental';
+  const useVision= isExp&&(prov==='gemini'||prov==='openai');
 
+  // Build origFileMap — same as organiseFiles does
   origFileMap={};
   for(const f of selectedFiles) origFileMap[f.webkitRelativePath||f.name]=f;
   const fileNames=selectedFiles.map(f=>f.webkitRelativePath||f.name);
@@ -2641,9 +2659,10 @@ async function generateDebugLog(){
     typeSummary[cat]=(typeSummary[cat]||0)+1;
   }
   const typeHint=Object.entries(typeSummary).filter(([,v])=>v>0).map(([k,v])=>`${v} ${k}`).join(', ');
-  const fmtDate=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+  const BATCH=Math.min(total,100);
+  const outTokens=Math.min(8000,BATCH*22);
 
-  // Extract all file contexts — only in experimental mode (normal sends filenames only)
+  // Extract file context — only in experimental mode
   const fileContext={}, visionData={};
   const extractionLog=[];
   if(isExp){
@@ -2652,132 +2671,72 @@ async function generateDebugLog(){
       await Promise.all(fileNames.slice(i,i+5).map(async fn=>{
         const file=origFileMap[fn]; if(!file) return;
         const raw=await extractFileContext(file,useVision);
-        const entry={file:fn, raw:raw||'(no context extracted)', hasVision:false, textCtx:''};
+        const entry={file:fn, hasVision:false, textCtx:''};
         if(raw){
           const vm=raw.match(/__VISION__([A-Za-z0-9+/=]+)/);
           if(vm){
             entry.hasVision=true;
             entry.visionBytes=Math.round(vm[1].length*0.75);
             entry.textCtx=raw.replace(/__VISION__[A-Za-z0-9+/=]+/,'').trim().replace(/\s*\|\s*$/,'').trim();
-            visionData[fn]=vm[1];
-            fileContext[fn]=entry.textCtx;
-          } else {
-            entry.textCtx=raw;
-            fileContext[fn]=raw;
-          }
+            visionData[fn]=vm[1]; fileContext[fn]=entry.textCtx;
+          } else { entry.textCtx=raw; fileContext[fn]=raw; }
         }
         extractionLog.push(entry);
       }));
     }
-  } else {
-    // Normal mode — no extraction, just record filenames for the log
-    for(const fn of fileNames){
-      extractionLog.push({file:fn, raw:'(normal mode — no extraction)', hasVision:false, textCtx:''});
-    }
   }
 
-  // Build the exact file list string — mirrors organiseFiles exactly
-  const fileListStr=fileNames.map(f=>{
-    const base=f.split('/').pop();
-    const file=origFileMap[f];
-    const date=file?.lastModified?` [${fmtDate(file.lastModified)}]`:'';
-    const ctx=isExp&&fileContext[f]?` | ${fileContext[f]}`:''; // experimental only — mirrors fix
-    return base+date+ctx;
-  }).join('\n');
+  // ── Call the SAME function organiseFiles uses ──
+  const {userMsg, system:systemPrompt} = buildAIMessages(fileNames.slice(0,BATCH), fileContext, visionData, userInstr, typeHint, total);
 
-  const visionItems=fileNames.filter(f=>visionData[f]);
-
-  const userMsg=[
-    '<user_task>',
-    userInstr ? userInstr : 'No specific instruction — organise intelligently using file names, types, and dates.',
-    '</user_task>',
-    `<summary>Total: ${total} files | Types: ${typeHint}</summary>`,
-    isExp ? '<note>File contents are included in the file list below — use them to understand and name each file accurately.</note>' : '',
-    isExp && visionItems.length ? `<note>Image thumbnails attached for: ${visionItems.map(f=>f.split('/').pop()).join(', ')}</note>` : '',
-    '<files>',
-    fileListStr,
-    '</files>',
-    '<reminder>Output JSON only. Every file in <files> must appear. Use exact original filename as JSON key (no brackets).</reminder>'
-  ].filter(Boolean).join('\n');
-
-  const systemPrompt=buildSystem();
-  const BATCH=total<=100?total:100;
-  const outTokens=currentMode==='experimental'?Math.min(16000,BATCH*80):Math.min(8000,BATCH*22);
-
-  // ── Build log text ──────────────────────────────────────────────
+  // ── Build log ──
   const sep='═'.repeat(60);
   const line='─'.repeat(60);
   const now=new Date().toISOString();
 
   let log=`FolderMind — AI Debug Log
-Generated: ${now}
+Generated : ${now}
 ${sep}
 
 SESSION INFO
-Provider : ${prov}
-Model    : ${model}
-Mode     : ${currentMode.toUpperCase()}
-Files    : ${total}
-Out tokens budget: ${outTokens}
-User instruction : ${userInstr||'(none)'}
+Provider  : ${prov}
+Model     : ${model}
+Mode      : ${currentMode.toUpperCase()}
+Files     : ${total}
+Token budget (output): ${outTokens}
+User instruction: ${userInstr||'(none)'}
 
 ${sep}
-SYSTEM PROMPT (sent as system role)
+SYSTEM PROMPT — sent as system role
 ${sep}
 ${systemPrompt}
 
 ${sep}
-USER MESSAGE (sent as user role)
+USER MESSAGE — sent as user role
 ${sep}
 ${userMsg}
-
-${sep}
-EXTRACTION DETAIL — per file ${isExp?'':'(normal mode: filenames+dates only)'}
-${sep}
 `;
 
-  for(const e of extractionLog){
-    log+=`
-FILE: ${e.file}
-`;
-    if(e.hasVision){
-      log+=`  Vision thumbnail : YES (~${e.visionBytes} bytes base64)
-`;
-      log+=`  Text context     : ${e.textCtx||'(none)'}
-`;
-    } else {
-      log+=`  Vision thumbnail : NO
-`;
-      log+=`  Text context     : ${e.textCtx||'(none extracted)'}
-`;
+  if(isExp && extractionLog.length){
+    log+=`\n${sep}\nEXTRACTION DETAIL (experimental mode)\n${sep}\n`;
+    for(const e of extractionLog){
+      log+=`FILE: ${e.file}\n`;
+      log+=e.hasVision
+        ? `  Vision: YES (~${e.visionBytes} bytes)  |  Text: ${e.textCtx||'(none)'}\n`
+        : `  Text context: ${e.textCtx||'(none extracted)'}\n`;
+      log+=line+'\n';
     }
-    log+=`  Raw extractor out: ${e.raw.replace(/__VISION__[A-Za-z0-9+/=]+/,'[VISION_BASE64_OMITTED]')}
-`;
-    log+=line+'\n';
+    log+=`\nFiles with text : ${extractionLog.filter(e=>e.textCtx).length}/${total}\n`;
+    log+=`Files with vision: ${extractionLog.filter(e=>e.hasVision).length}/${total}\n`;
   }
 
-  log+=`
-${sep}
-SUMMARY
-${sep}
-`;
-  log+=`Files with text context : ${extractionLog.filter(e=>e.textCtx).length}/${total}
-`;
-  log+=`Files with vision thumb : ${extractionLog.filter(e=>e.hasVision).length}/${total}
-`;
-  log+=`Files with NO context   : ${extractionLog.filter(e=>!e.textCtx&&!e.hasVision).length}/${total}
-`;
-  log+=`Approx user msg chars   : ${userMsg.length}
-`;
-  log+=`Approx system msg chars : ${systemPrompt.length}
-`;
-  log+=`Total approx chars sent : ${userMsg.length+systemPrompt.length}
-`;
-  log+=`
-Type breakdown: ${typeHint}
-`;
+  log+=`\n${sep}\nSUMMARY\n${sep}\n`;
+  log+=`System prompt chars : ${systemPrompt.length}\n`;
+  log+=`User message chars  : ${userMsg.length}\n`;
+  log+=`Total chars to AI   : ${systemPrompt.length+userMsg.length}\n`;
+  log+=`Approx tokens       : ~${Math.round((systemPrompt.length+userMsg.length)/4)}\n`;
+  log+=`Type breakdown      : ${typeHint}\n`;
 
-  // ── Download ──────────────────────────────────────────────────────
   const blob=new Blob([log],{type:'text/plain'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
@@ -2785,7 +2744,7 @@ Type breakdown: ${typeHint}
   a.click();
   URL.revokeObjectURL(a.href);
 
-  setStatus(`Debug log downloaded — ${total} files analysed`);
+  setStatus(`Debug log downloaded — ${total} files`);
   showToast('Debug log downloaded!','success');
   btn.disabled=false; btn.innerHTML='<span class="ic ic-sm"><svg><use href="#ic-bug"/></svg></span> Debug Log';
 }
