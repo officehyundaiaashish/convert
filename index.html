@@ -1589,21 +1589,122 @@ function readTextContent(file, maxChars=200){
 function readPdfText(file){
   return new Promise(resolve=>{
     const reader=new FileReader();
-    reader.onload=e=>{
+    reader.onload=async e=>{
       try{
-        const text=e.target.result||'';
-        // Extract readable strings from PDF stream
-        const matches=text.match(/\(([^\)]{3,80})\)/g)||[];
-        const words=matches
-          .map(m=>m.slice(1,-1).replace(/[^\x20-\x7E]/g,'').trim())
-          .filter(w=>w.length>2&&/[a-zA-Z]/.test(w))
-          .slice(0,40)
-          .join(' ');
-        resolve(words.slice(0,300)||null);
+        const buf=e.target.result;
+        const bytes=new Uint8Array(buf);
+        // Decode as latin-1 — 1:1 byte mapping, preserves all byte values
+        const raw=Array.from(bytes).map(b=>String.fromCharCode(b)).join('');
+
+        const words=[];
+
+        // Helper: extract text from a decoded string chunk
+        function extractFromChunk(chunk){
+          // BT...ET text blocks
+          const btBlocks=chunk.match(/BT[\s\S]{0,2000}?ET/g)||[];
+          for(const block of btBlocks){
+            // Literal strings (text)Tj
+            const lits=block.match(/\(([^)\\]*(?:\\.[^)\\]*)*)\)/g)||[];
+            for(const l of lits){
+              const s=l.slice(1,-1)
+                .replace(/\\n/g,' ').replace(/\\r/g,' ').replace(/\\t/g,' ')
+                .replace(/\\(.)/g,'$1')
+                .replace(/[^\x20-\x7E]/g,'').trim();
+              if(s.length>1&&/[a-zA-Z]/.test(s)) words.push(s);
+            }
+            // Hex strings <HHHH>
+            const hexes=block.match(/<([0-9a-fA-F\s]{4,})>/g)||[];
+            for(const h of hexes){
+              const hex=h.slice(1,-1).replace(/\s/g,'');
+              if(hex.length%2!==0) continue;
+              let s='';
+              for(let i=0;i<hex.length;i+=2){
+                const code=parseInt(hex.slice(i,i+2),16);
+                if(code>=32&&code<127) s+=String.fromCharCode(code);
+              }
+              if(s.length>1&&/[a-zA-Z]/.test(s)) words.push(s);
+            }
+          }
+          // Also scan for literal strings outside BT blocks (annotations, form fields)
+          if(words.length<8){
+            const lits=chunk.match(/\(([^)\\]{2,120})\)/g)||[];
+            for(const l of lits){
+              const s=l.slice(1,-1).replace(/[^\x20-\x7E]/g,'').trim();
+              if(s.length>2&&/[a-zA-Z]{2}/.test(s)&&!/^[\d\s.,()\/-]+$/.test(s)) words.push(s);
+            }
+          }
+        }
+
+        // Strategy 1: parse uncompressed content directly
+        extractFromChunk(raw);
+
+        // Strategy 2: decompress FlateDecode streams (most modern PDFs)
+        // Find stream...endstream blocks and try to decompress each
+        if(words.length<6 && typeof DecompressionStream!=='undefined'){
+          const streamRe=/stream\r?\n([\s\S]*?)\r?\nendstream/g;
+          let m;
+          let tried=0;
+          while((m=streamRe.exec(raw))!==null && tried<12){
+            tried++;
+            const streamBytes=bytes.slice(m.index+m[0].indexOf('\n',6)+1,
+              m.index+m[0].lastIndexOf('\nendstream'));
+            // Skip tiny or clearly text streams
+            if(streamBytes.length<20) continue;
+            // Check for zlib magic bytes: 0x78 0x9C / 0x78 0xDA / 0x78 0x01
+            if(streamBytes[0]!==0x78) continue;
+            try{
+              const ds=new DecompressionStream('deflate');
+              const writer=ds.writable.getWriter();
+              writer.write(streamBytes);
+              writer.close();
+              const chunks=[];
+              const reader2=ds.readable.getReader();
+              const read2=async()=>{
+                const {done,value}=await reader2.read();
+                if(!done){chunks.push(value);await read2();}
+              };
+              await read2();
+              const decompressed=new TextDecoder('latin1').decode(
+                new Uint8Array(chunks.reduce((a,b)=>{const c=new Uint8Array(a.length+b.length);c.set(a);c.set(b,a.length);return c;},new Uint8Array()))
+              );
+              extractFromChunk(decompressed);
+            }catch{}
+          }
+        }
+
+        // Strategy 3: PDF metadata — /Title /Author /Subject /Keywords /Creator
+        // These are almost always uncompressed in the Info dict
+        for(const field of ['Title','Author','Subject','Keywords','Creator']){
+          const litM=raw.match(new RegExp('/'+field+'\\s*\\(([^)]{1,120})\\)'));
+          if(litM){
+            const s=litM[1].replace(/[^\x20-\x7E]/g,'').trim();
+            if(s.length>1&&/[a-zA-Z]/.test(s)) words.unshift(field+':'+s);
+          }
+          const hexM=raw.match(new RegExp('/'+field+'\\s*<([0-9a-fA-F\\s]{4,240})>'));
+          if(hexM){
+            const hex=hexM[1].replace(/\s/g,'');
+            let s='';
+            for(let i=0;i<hex.length-1;i+=2){
+              const code=parseInt(hex.slice(i,i+2),16);
+              if(code>=32&&code<127) s+=String.fromCharCode(code);
+            }
+            if(s.length>1&&/[a-zA-Z]/.test(s)) words.unshift(field+':'+s);
+          }
+        }
+
+        const noiseWords=new Set(['obj','endobj','stream','endstream','xref','trailer',
+          'startxref','true','false','null','Type','Page','Pages','Font','XObject',
+          'ColorSpace','Resources','MediaBox','Contents','Encoding','BaseFont','Length']);
+        const clean=[...new Set(words)]
+          .map(w=>w.trim())
+          .filter(w=>w.length>1&&!noiseWords.has(w)&&/[a-zA-Z]/.test(w));
+
+        resolve(clean.join(' ').slice(0,300)||null);
       }catch{resolve(null);}
     };
     reader.onerror=()=>resolve(null);
-    reader.readAsBinaryString(file.slice(0,65536));
+    // 512KB — enough for metadata + first 2-3 pages of most PDFs
+    reader.readAsArrayBuffer(file.slice(0,524288));
   });
 }
 
@@ -1723,173 +1824,49 @@ async function extractFileContext(file, useVision=false){
       if(list) parts.push(`Contains:${list}`);
     }
     else if(ext==='docx'){
-      // always try raw binary first — works for real docx AND fake stubs
-      const collected=[];
       try{
         const zip=await JSZip.loadAsync(file);
-        // Pass A: w:t XML runs across all word/ xml files
-        const allWK=Object.keys(zip.files).filter(k=>
-          (k.startsWith('word/')||k.startsWith('Word/'))&&k.endsWith('.xml')&&!zip.files[k].dir);
-        const xmlKeys=['word/document.xml','Word/document.xml',
-          ...allWK.filter(k=>!/document\.xml$/i.test(k))];
-        for(const key of xmlKeys.slice(0,12)){
+        const xmlKeys=['word/document.xml'].concat(
+          Object.keys(zip.files).filter(k=>k.startsWith('word/')&&k.endsWith('.xml')&&k!=='word/document.xml')
+        );
+        const collected=[];
+        for(const key of xmlKeys.slice(0,4)){
           const entry=zip.files[key]; if(!entry) continue;
-          let xml=''; try{xml=await entry.async('string');}catch{continue;}
-          if(!xml||xml.length<30) continue;
-          const wt=(xml.match(/<w:t(?:\s[^>]*)?>([^<]{1,300})<\/w:t>/g)||[])
-            .map(t=>t.replace(/<[^>]+>/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim())
-            .filter(t=>t.length>1&&/[a-zA-Z0-9]/.test(t));
-          if(wt.length){collected.push(...wt.slice(0,100));break;}
-          const plain=xml.replace(/<[^>]+>/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<')
-            .replace(/&gt;/g,'>').replace(/\s+/g,' ').trim();
-          const words=plain.replace(/[^\x20-\x7E\u00A0-\uFFFF]/g,'').trim();
-          if(words.length>30){collected.push(words.slice(0,300));break;}
+          const xml=await entry.async('string');
+          const wt=(xml.match(/<w:t[^>]*>([^<]{1,200})<\/w:t>/g)||[])
+            .map(t=>t.replace(/<[^>]+>/g,'').trim()).filter(t=>t.length>1);
+          if(wt.length){ collected.push(...wt); break; }
+          const plain=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+          if(plain.length>20){ collected.push(plain.slice(0,300)); break; }
         }
-        // Pass B: docProps title/subject
-        for(const pk of ['docProps/core.xml','docProps/app.xml']){
-          const e=zip.files[pk]; if(!e) continue;
-          try{
-            const x=await e.async('string');
-            const title=(x.match(/<dc:title>([^<]+)<\/dc:title>/)||[])[1];
-            const subj=(x.match(/<dc:subject>([^<]+)<\/dc:subject>/)||[])[1];
-            if(title) collected.unshift('Title:'+title.trim().slice(0,60));
-            if(subj) collected.unshift('Subject:'+subj.trim().slice(0,60));
-          }catch{}
-        }
+        const text=collected.join(' ').replace(/\s+/g,' ').trim().slice(0,300);
+        if(text.length>10) parts.push(`Content:${text}`);
       }catch{}
-      // Pass C: raw binary scrape — catches fake stubs, encrypted, non-standard
-      if(collected.length===0){
-        try{
-          const buf=await file.arrayBuffer();
-          const bytes=new Uint8Array(buf);
-          // extract ASCII runs ≥4 chars
-          let run='',runs=[];
-          for(let i=0;i<Math.min(bytes.length,200000);i++){
-            const b=bytes[i];
-            if(b>=32&&b<127){run+=String.fromCharCode(b);}
-            else{if(run.length>=4)runs.push(run);run='';}
-          }
-          if(run.length>=4) runs.push(run);
-          // also scan UTF-16LE (Windows format)
-          try{
-            const u16=new TextDecoder('utf-16le').decode(buf.slice(0,Math.min(buf.byteLength,200000)));
-            let urun='',uruns=[];
-            for(const c of u16){
-              if(c>=' '&&c<'\x7f'){urun+=c;}
-              else{if(urun.length>=4)uruns.push(urun);urun='';}
-            }
-            if(urun.length>=4) uruns.push(urun);
-            runs.push(...uruns);
-          }catch{}
-          const noiseRe=/^(xml|http|rels|xmlns|schemas|office|microsoft|relationships|Content|Type|Override|Part)/i;
-          const textRuns=[...new Set(runs)]
-            .filter(r=>/[a-zA-Z]{3,}/.test(r)&&!noiseRe.test(r.trim()))
-            .map(r=>r.replace(/[<>{}\\\/\[\]]/g,' ').replace(/\s+/g,' ').trim())
-            .filter(r=>r.length>3);
-          if(textRuns.length) collected.push(textRuns.join(' ').slice(0,300));
-        }catch{}
-      }
-      const text=collected.join(' ').replace(/\s+/g,' ')
-        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,'').trim().slice(0,300);
-      if(text.length>10) parts.push('Content:'+text);
     }
     else if(ext==='xlsx'){
-      const collected=[];
       try{
         const zip=await JSZip.loadAsync(file);
-        // Pass A: workbook sheet names — always present, very informative
-        const wbE=zip.files['xl/workbook.xml']||zip.files['xl/Workbook.xml']||
-          Object.values(zip.files).find(f=>f.name.toLowerCase()==='xl/workbook.xml');
-        if(wbE){
-          try{
-            const x=await wbE.async('string');
-            const names=(x.match(/name="([^"]{1,80})"/g)||[])
-              .map(n=>n.replace(/name="|"/g,'').trim())
-              .filter(n=>n&&!/^Sheet\d*$/i.test(n)&&n.length>1&&n.length<60);
-            collected.unshift(...names);
-          }catch{}
+        const collected=[];
+        const ss=zip.files['xl/sharedStrings.xml'];
+        if(ss){
+          const xml=await ss.async('string');
+          const tokens=(xml.match(/<t(?:\s[^>]*)?>([^<]+)<\/t>/g)||[])
+            .map(t=>t.replace(/<[^>]+>/g,'').trim()).filter(t=>t.length>0);
+          collected.push(...tokens);
         }
-        // Pass B: shared strings (case-insensitive path lookup)
-        const ssE=zip.files['xl/sharedStrings.xml']||zip.files['xl/SharedStrings.xml']||
-          Object.values(zip.files).find(f=>f.name.toLowerCase().includes('sharedstrings'));
-        if(ssE){
-          try{
-            const xml=await ssE.async('string');
-            const tokens=(xml.match(/<t(?:\s[^>]*)?>([^<]+)<\/t>/g)||[])
-              .map(t=>t.replace(/<[^>]+>/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').trim())
-              .filter(t=>t.length>0&&t.length<200&&/[a-zA-Z]/.test(t));
-            collected.push(...tokens.slice(0,150));
-          }catch{}
-        }
-        // Pass C: all sheet XML — inline strings + str-typed cells + short values
-        const sheetKeys=Object.keys(zip.files).filter(k=>
-          /xl[/\\]worksheets[/\\]sheet\d+\.xml/i.test(k)&&!zip.files[k].dir);
-        for(const sk of sheetKeys.slice(0,8)){
-          const e=zip.files[sk]; if(!e) continue;
-          let xml=''; try{xml=await e.async('string');}catch{continue;}
-          (xml.match(/<is>[\s\S]*?<\/is>/g)||[])
-            .map(s=>s.replace(/<[^>]+>/g,' ').replace(/&amp;/g,'&').replace(/\s+/g,' ').trim())
-            .filter(s=>s.length>1&&/[a-zA-Z]/.test(s))
-            .forEach(s=>collected.push(s));
-          (xml.match(/<c[^>]+t="(?:str|inlineStr)"[^>]*>[\s\S]*?<\/c>/g)||[])
-            .map(c=>{const m=c.match(/<v>([^<]*)<\/v>/);return m?m[1].replace(/&amp;/g,'&').trim():''})
-            .filter(v=>v.length>1&&v.length<200&&/[a-zA-Z]/.test(v))
-            .forEach(v=>collected.push(v));
-          (xml.match(/<v>([^<]{1,60})<\/v>/g)||[])
+        const sheetKeys=Object.keys(zip.files).filter(k=>/xl\/worksheets\/sheet\d+\.xml/.test(k));
+        for(const sk of sheetKeys.slice(0,4)){
+          const xml=await zip.files[sk].async('string');
+          const is=(xml.match(/<is>[\s\S]*?<\/is>/g)||[]).map(s=>s.replace(/<[^>]+>/g,' ').trim());
+          collected.push(...is);
+          const vals=(xml.match(/<v>([^<]+)<\/v>/g)||[])
             .map(v=>v.replace(/<[^>]+>/g,'').trim())
-            .filter(v=>v.length>0&&v.length<60&&!/^\d{5,}(\.\d+)?$/.test(v)&&/[a-zA-Z]/.test(v))
-            .forEach(v=>collected.push(v));
-          if(collected.length>250) break;
+            .filter(v=>v.length>0&&!/^\d{5,}(\.\d+)?$/.test(v)&&!/^4[0-9]{4}/.test(v));
+          collected.push(...vals);
         }
-        // Pass D: docProps
-        for(const pk of ['docProps/core.xml','docProps/app.xml']){
-          const e=zip.files[pk]; if(!e) continue;
-          try{
-            const x=await e.async('string');
-            const title=(x.match(/<dc:title>([^<]+)<\/dc:title>/)||[])[1];
-            const subj=(x.match(/<dc:subject>([^<]+)<\/dc:subject>/)||[])[1];
-            if(title) collected.unshift('Title:'+title.trim().slice(0,60));
-            if(subj) collected.unshift('Subject:'+subj.trim().slice(0,60));
-          }catch{}
-        }
+        const text=[...new Set(collected)].filter(t=>t.length>0).join(' ').replace(/\s+/g,' ').trim().slice(0,300);
+        if(text.length>10) parts.push(`Content:${text}`);
       }catch{}
-      // Pass E: raw binary scrape — catches fake stubs + files with no shared strings
-      if(collected.length===0){
-        try{
-          const buf=await file.arrayBuffer();
-          const bytes=new Uint8Array(buf);
-          let run='',runs=[];
-          for(let i=0;i<Math.min(bytes.length,300000);i++){
-            const b=bytes[i];
-            if(b>=32&&b<127){run+=String.fromCharCode(b);}
-            else{if(run.length>=4)runs.push(run);run='';}
-          }
-          if(run.length>=4) runs.push(run);
-          // UTF-16LE scan too
-          try{
-            const u16=new TextDecoder('utf-16le').decode(buf.slice(0,Math.min(buf.byteLength,300000)));
-            let urun='',uruns=[];
-            for(const c of u16){
-              if(c>=' '&&c<'\x7f'){urun+=c;}
-              else{if(urun.length>=4)uruns.push(urun);urun='';}
-            }
-            if(urun.length>=4) uruns.push(urun);
-            runs.push(...uruns);
-          }catch{}
-          const noiseRe=/^(xml|http|rels|xmlns|schemas|office|microsoft|relationships|Content|Type|Override|Part|_xlnm)/i;
-          const textRuns=[...new Set(runs)]
-            .filter(r=>/[a-zA-Z]{3,}/.test(r)&&!noiseRe.test(r.trim()))
-            .map(r=>r.replace(/[<>{}\\\/\[\]]/g,' ').replace(/\s+/g,' ').trim())
-            .filter(r=>r.length>3);
-          if(textRuns.length) collected.push(textRuns.join(' ').slice(0,300));
-        }catch{}
-      }
-      // clean noise tokens before output
-      const clean=[...new Set(collected)]
-        .filter(t=>t&&t.length>0&&!/^(_xlnm\.|FilterDatabase|Print_Area|microsoft\.com:)/i.test(t));
-      const text=clean.join(' ').replace(/\s+/g,' ')
-        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,'').trim().slice(0,300);
-      if(text.length>10) parts.push('Content:'+text);
     }
   }catch(e){}
 
@@ -2053,11 +2030,8 @@ async function organiseFiles(){
         const ctx=await extractFileContext(file,useVision);
         if(ctx){
           const vm=ctx.match(/__VISION__([A-Za-z0-9+/=]+)/);
-          const cleanCtx=s=>s.replace(/_xlnm\.\S+/g,'').replace(/microsoft\.com:\S+/g,'')
-            .replace(/\b(xmlns|rels|schemas|relationships|officeDocument|spreadsheetml|drawingml)\S*/gi,'')
-            .replace(/\s+/g,' ').trim();
-          if(vm){ visionData[fn]=vm[1]; fileContext[fn]=cleanCtx(ctx.replace(/__VISION__[A-Za-z0-9+/=]+/,'').trim().replace(/\s*\|\s*$/,'').trim()); }
-          else fileContext[fn]=cleanCtx(ctx);
+          if(vm){ visionData[fn]=vm[1]; fileContext[fn]=ctx.replace(/__VISION__[A-Za-z0-9+/=]+/,'').trim().replace(/\s*\|\s*$/,'').trim(); }
+          else fileContext[fn]=ctx;
         }
         if(++done%10===0) setStatus(`Reading contents... ${done}/${total}`);
       }));
