@@ -1536,9 +1536,8 @@ async function callGemini(key, model, messages, maxTokens){
     return {role, parts};
   });
 
-  // Force JSON output — prevents Gemini from adding description text around JSON
-  const hasVision=msgs.some(m=>Array.isArray(m.content)&&m.content.some(p=>p.type==='image_url'));
-  const body={contents, generationConfig:{maxOutputTokens:maxTokens, temperature:0.15, ...(hasVision?{responseMimeType:'application/json'}:{})}};
+  // Force JSON output — always set for Gemini to prevent markdown/prose wrapping
+  const body={contents, generationConfig:{maxOutputTokens:maxTokens, temperature:0.15, responseMimeType:'application/json'}};
   if(sys) body.systemInstruction={parts:[{text: typeof sys.content==='string'?sys.content:JSON.stringify(sys.content)}]};
   try{
     const url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
