@@ -1725,14 +1725,21 @@ async function extractFileContext(file, useVision=false){
     else if(ext==='docx'){
       try{
         const zip=await JSZip.loadAsync(file);
-        const xmlFile=zip.files['word/document.xml'];
-        if(xmlFile){
-          const xml=await xmlFile.async('string');
-          const tokens=(xml.match(/<w:t[^>]*>([^<]+)<\/w:t>/g)||[])
-            .map(t=>t.replace(/<[^>]+>/g,'').trim()).filter(t=>t.length>0);
-          const text=tokens.join(' ').replace(/\s+/g,' ').trim().slice(0,300);
-          if(text.length>10) parts.push(`Content:${text}`);
+        const xmlKeys=['word/document.xml'].concat(
+          Object.keys(zip.files).filter(k=>k.startsWith('word/')&&k.endsWith('.xml')&&k!=='word/document.xml')
+        );
+        const collected=[];
+        for(const key of xmlKeys.slice(0,4)){
+          const entry=zip.files[key]; if(!entry) continue;
+          const xml=await entry.async('string');
+          const wt=(xml.match(/<w:t[^>]*>([^<]{1,200})<\/w:t>/g)||[])
+            .map(t=>t.replace(/<[^>]+>/g,'').trim()).filter(t=>t.length>1);
+          if(wt.length){ collected.push(...wt); break; }
+          const plain=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+          if(plain.length>20){ collected.push(plain.slice(0,300)); break; }
         }
+        const text=collected.join(' ').replace(/\s+/g,' ').trim().slice(0,300);
+        if(text.length>10) parts.push(`Content:${text}`);
       }catch{}
     }
     else if(ext==='xlsx'){
@@ -1742,19 +1749,21 @@ async function extractFileContext(file, useVision=false){
         const ss=zip.files['xl/sharedStrings.xml'];
         if(ss){
           const xml=await ss.async('string');
-          const tokens=(xml.match(/<t[^>]*>([^<]+)<\/t>/g)||[])
+          const tokens=(xml.match(/<t(?:\s[^>]*)?>([^<]+)<\/t>/g)||[])
             .map(t=>t.replace(/<[^>]+>/g,'').trim()).filter(t=>t.length>0);
           collected.push(...tokens);
         }
         const sheetKeys=Object.keys(zip.files).filter(k=>/xl\/worksheets\/sheet\d+\.xml/.test(k));
-        for(const sk of sheetKeys.slice(0,3)){
+        for(const sk of sheetKeys.slice(0,4)){
           const xml=await zip.files[sk].async('string');
-          const tokens=(xml.match(/<(?:t|v)[^>]*>([^<]+)<\/(?:t|v)>/g)||[])
-            .map(t=>t.replace(/<[^>]+>/g,'').trim())
-            .filter(t=>t.length>0&&!/^\d+(\.\d+)?$/.test(t));
-          collected.push(...tokens);
+          const is=(xml.match(/<is>[\s\S]*?<\/is>/g)||[]).map(s=>s.replace(/<[^>]+>/g,' ').trim());
+          collected.push(...is);
+          const vals=(xml.match(/<v>([^<]+)<\/v>/g)||[])
+            .map(v=>v.replace(/<[^>]+>/g,'').trim())
+            .filter(v=>v.length>0&&!/^\d{5,}(\.\d+)?$/.test(v)&&!/^4[0-9]{4}/.test(v));
+          collected.push(...vals);
         }
-        const text=[...new Set(collected)].join(' ').replace(/\s+/g,' ').trim().slice(0,300);
+        const text=[...new Set(collected)].filter(t=>t.length>0).join(' ').replace(/\s+/g,' ').trim().slice(0,300);
         if(text.length>10) parts.push(`Content:${text}`);
       }catch{}
     }
