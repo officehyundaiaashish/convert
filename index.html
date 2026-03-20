@@ -1488,21 +1488,7 @@ Max 3 folder levels, use / as separator.`;
 // ─── Anthropic API adapter ───
 async function callAnthropic(key, model, messages, maxTokens){
   const sys    = messages.find(m=>m.role==='system')?.content||'';
-  const rawMsgs = messages.filter(m=>m.role!=='system');
-  // Convert vision content array to Anthropic format
-  const msgs = rawMsgs.map(m=>{
-    if(!Array.isArray(m.content)) return m;
-    const content = m.content.map(part=>{
-      if(part.type==='text') return {type:'text', text:part.text};
-      if(part.type==='image_url'){
-        const dataUri = part.image_url?.url||'';
-        const match = dataUri.match(/^data:(image\/[\w+]+);base64,(.+)$/);
-        if(match) return {type:'image', source:{type:'base64', media_type:match[1], data:match[2]}};
-      }
-      return {type:'text', text:'[image]'};
-    });
-    return {...m, content};
-  });
+  const msgs   = messages.filter(m=>m.role!=='system');
   const body   = {model, messages:msgs, max_tokens:maxTokens, temperature:0.15};
   if(sys) body.system = sys;
   try{
@@ -1550,11 +1536,7 @@ async function callGemini(key, model, messages, maxTokens){
     return {role, parts};
   });
 
-  // Detect vision in already-converted contents (inlineData = image)
   const hasVision=contents.some(c=>c.parts&&c.parts.some(p=>p.inlineData));
-  // responseMimeType:'application/json' forces clean JSON — text-only calls only.
-  // MUST be omitted for vision calls — Gemini 2.5 rejects that combination.
-  // thinkingBudget:0 disables chain-of-thought on 2.5 models (not needed for structured JSON).
   const isThinking=model.includes('2.5');
   const body={contents, generationConfig:{maxOutputTokens:maxTokens, temperature:0.15,
     ...(!hasVision?{responseMimeType:'application/json'}:{}),
@@ -1562,7 +1544,7 @@ async function callGemini(key, model, messages, maxTokens){
   }};
   const sysText=typeof sys?.content==='string'?sys.content:sys?JSON.stringify(sys.content):'';
   const sysContent=hasVision
-    ?sysText+'\n\nCRITICAL: Your ENTIRE response must be a single raw JSON object. No markdown, no explanation, no text before or after. Start with { and end with }.'
+    ?sysText+'\n\nCRITICAL: Respond with ONLY a raw JSON object. No markdown, no explanation. Start with { end with }.'
     :sysText;
   if(sys) body.systemInstruction={parts:[{text:sysContent}]};
   try{
@@ -1570,7 +1552,6 @@ async function callGemini(key, model, messages, maxTokens){
     const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await res.json();
     if(!res.ok) throw new Error(data.error?.message||`Gemini ${res.status}`);
-    // Filter out thinking parts (Gemini 2.5) — only keep actual output parts
     const parts=(data.candidates?.[0]?.content?.parts||[]).filter(p=>!p.thought);
     const text=parts.map(p=>p.text||'').join('');
     const parsed=extractJSON(text);
@@ -1738,53 +1719,240 @@ function readZipList(file){
 }
 
 // Master extractor — decides what to extract per file type
+// Covers ALL categories in FILE_TYPES for experimental mode
 async function extractFileContext(file, useVision=false){
   const cat=getFileCategory(file.name);
   const ext=file.name.split('.').pop().toLowerCase();
   const parts=[];
 
+  // Helper: file size string
+  const sizeMB=(file.size/1048576).toFixed(1);
+  const sizeKB=(file.size/1024).toFixed(0);
+  const sizeStr=file.size>1048576?`${sizeMB}MB`:`${sizeKB}KB`;
+
   try{
+    // ── IMAGE ──────────────────────────────────────────────
     if(cat==='image'){
-      const meta=await readImageMeta(file);
-      if(meta) parts.push(meta);
-      if(useVision){
+      parts.push(`Size:${sizeStr}`);
+      if(['svg'].includes(ext)){
+        // SVG is XML text — extract viewBox + title/desc
+        const text=await readTextContent(file,200);
+        if(text) parts.push(`SVGContent:${text}`);
+      } else {
+        const meta=await readImageMeta(file);
+        if(meta) parts.push(meta);
+      }
+      if(useVision && !['svg','psd','ai','xcf'].includes(ext)){
         const thumb=await imgToThumbnail(file,200);
-        if(thumb) parts.push(`__VISION__${thumb}`); // marker for callAI
+        if(thumb) parts.push(`__VISION__${thumb}`);
       }
     }
+    // ── AUDIO ──────────────────────────────────────────────
     else if(cat==='audio'){
+      parts.push(`Size:${sizeStr}`);
+      // ID3v2 works for mp3/m4a/aac/ogg — try for all audio
       const meta=await readAudioMeta(file);
       if(meta) parts.push(meta);
+      // Fallback: try reading first bytes as text for any embedded title
+      else {
+        const text=await readTextContent(file,80);
+        if(text && /[a-zA-Z]{3,}/.test(text)) parts.push(`Header:${text.slice(0,60)}`);
+      }
     }
+    // ── VIDEO ──────────────────────────────────────────────
     else if(cat==='video'){
+      parts.push(`Size:${sizeStr}`);
       const dur=await readVideoDuration(file);
       if(dur) parts.push(`Duration:${dur}`);
-      const mb=(file.size/1048576).toFixed(1);
-      parts.push(`Size:${mb}MB`);
     }
-    else if(ext==='pdf'){
-      const text=await readPdfText(file);
-      if(text) parts.push(`Content:${text.slice(0,200)}`);
+    // ── DOCUMENT ───────────────────────────────────────────
+    else if(cat==='document'){
+      if(ext==='pdf'){
+        const text=await readPdfText(file);
+        if(text) parts.push(`Content:${text.slice(0,250)}`);
+      } else if(['txt','md','rtf','log'].includes(ext)){
+        const text=await readTextContent(file,200);
+        if(text) parts.push(`Content:${text}`);
+      } else if(['doc','docx'].includes(ext)){
+        // docx is a zip — extract word/document.xml text snippet
+        const snippet=await readDocxText(file);
+        if(snippet) parts.push(`Content:${snippet}`);
+        else parts.push(`Size:${sizeStr}`);
+      } else if(['epub','mobi'].includes(ext)){
+        // epub is zip-based — try extracting title from container
+        const snippet=await readEpubTitle(file);
+        if(snippet) parts.push(`Title:${snippet}`);
+        else parts.push(`Size:${sizeStr}`);
+      } else if(['odt','pages'].includes(ext)){
+        const snippet=await readOdtText(file);
+        if(snippet) parts.push(`Content:${snippet}`);
+        else parts.push(`Size:${sizeStr}`);
+      } else {
+        parts.push(`Size:${sizeStr}`);
+      }
     }
-    else if(['txt','md','csv','log','xml','html','htm'].includes(ext)){
+    // ── SPREADSHEET ────────────────────────────────────────
+    else if(cat==='spreadsheet'){
+      if(['csv','tsv'].includes(ext)){
+        const text=await readTextContent(file,200);
+        if(text) parts.push(`Headers:${text}`);
+      } else if(['xlsx','xls','ods','numbers'].includes(ext)){
+        // xlsx/ods are zips — try reading sheet names or first cell data
+        const snippet=await readSpreadsheetMeta(file);
+        if(snippet) parts.push(`Sheets:${snippet}`);
+        else parts.push(`Size:${sizeStr}`);
+      }
+    }
+    // ── PRESENTATION ───────────────────────────────────────
+    else if(cat==='presentation'){
+      if(['pptx','odp'].includes(ext)){
+        const snippet=await readPptxTitle(file);
+        if(snippet) parts.push(`Title:${snippet}`);
+        else parts.push(`Size:${sizeStr}`);
+      } else {
+        parts.push(`Size:${sizeStr}`);
+      }
+    }
+    // ── CODE ───────────────────────────────────────────────
+    else if(cat==='code'){
+      // All code extensions — read first lines
       const text=await readTextContent(file,150);
-      if(text) parts.push(`Content:${text}`);
-    }
-    else if(['js','ts','py','java','cpp','c','go','rb','swift','kt','rs','php'].includes(ext)){
-      const text=await readTextContent(file,120);
       if(text) parts.push(`Code:${text}`);
+      else parts.push(`Size:${sizeStr}`);
     }
-    else if(['json','yaml','yml','toml','env'].includes(ext)){
-      const text=await readTextContent(file,100);
-      if(text) parts.push(`Data:${text}`);
+    // ── DATA / CONFIG ──────────────────────────────────────
+    else if(cat==='data'){
+      if(['json','yaml','yml','toml','env','ini','cfg','conf'].includes(ext)){
+        const text=await readTextContent(file,150);
+        if(text) parts.push(`Data:${text}`);
+      } else if(ext==='xml'){
+        const text=await readTextContent(file,150);
+        if(text) parts.push(`XML:${text}`);
+      } else if(['sql'].includes(ext)){
+        const text=await readTextContent(file,150);
+        if(text) parts.push(`SQL:${text}`);
+      } else if(['db','sqlite','sqlite3'].includes(ext)){
+        parts.push(`Size:${sizeStr} Type:SQLiteDB`);
+      }
     }
-    else if(['zip','rar','7z'].includes(ext)){
-      const list=await readZipList(file);
-      if(list) parts.push(`Contains:${list}`);
+    // ── ARCHIVE ────────────────────────────────────────────
+    else if(cat==='archive'){
+      parts.push(`Size:${sizeStr}`);
+      if(['zip','rar','7z'].includes(ext)){
+        const list=await readZipList(file);
+        if(list) parts.push(`Contains:${list}`);
+      }
+    }
+    // ── FONT ───────────────────────────────────────────────
+    else if(cat==='font'){
+      parts.push(`Size:${sizeStr} Type:Font`);
+    }
+    // ── ICON / SHORTCUT / EXECUTABLE ──────────────────────
+    else if(cat==='icon'||cat==='shortcut'||cat==='executable'){
+      parts.push(`Size:${sizeStr}`);
+      if(cat==='shortcut' && ext==='url'){
+        // .url files are INI-like text with URL= line
+        const text=await readTextContent(file,100);
+        if(text) parts.push(`Link:${text}`);
+      }
+    }
+    // ── OTHER / UNKNOWN ────────────────────────────────────
+    else {
+      parts.push(`Size:${sizeStr}`);
+      // Try reading as text — if it looks textual, grab snippet
+      if(file.size < 512*1024){
+        const text=await readTextContent(file,100);
+        if(text && text.length>10 && /[a-zA-Z]{4,}/.test(text))
+          parts.push(`Content:${text}`);
+      }
     }
   }catch(e){}
 
   return parts.length ? parts.join(' | ') : null;
+}
+
+// ── Read docx (Office Open XML) — extract plain text from word/document.xml ──
+async function readDocxText(file){
+  try{
+    const zip=await JSZip.loadAsync(file);
+    const xmlFile=zip.files['word/document.xml'];
+    if(!xmlFile) return null;
+    const xml=await xmlFile.async('string');
+    // Strip XML tags, collapse whitespace
+    const text=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+    // Filter to readable words only
+    const words=text.split(' ').filter(w=>w.length>1&&/[a-zA-Z]/.test(w)).slice(0,50).join(' ');
+    return words.slice(0,200)||null;
+  }catch{return null;}
+}
+
+// ── Read odt (ODF text) — extract content.xml text ──
+async function readOdtText(file){
+  try{
+    const zip=await JSZip.loadAsync(file);
+    const xmlFile=zip.files['content.xml'];
+    if(!xmlFile) return null;
+    const xml=await xmlFile.async('string');
+    const text=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+    const words=text.split(' ').filter(w=>w.length>1&&/[a-zA-Z]/.test(w)).slice(0,50).join(' ');
+    return words.slice(0,200)||null;
+  }catch{return null;}
+}
+
+// ── Read epub — extract title from OPF metadata ──
+async function readEpubTitle(file){
+  try{
+    const zip=await JSZip.loadAsync(file);
+    // Find the OPF file (content.opf or similar)
+    const opfEntry=Object.keys(zip.files).find(n=>n.endsWith('.opf'));
+    if(!opfEntry) return null;
+    const xml=await zip.files[opfEntry].async('string');
+    const titleM=xml.match(/<dc:title[^>]*>([^<]+)<\/dc:title>/i);
+    const authorM=xml.match(/<dc:creator[^>]*>([^<]+)<\/dc:creator>/i);
+    const parts=[];
+    if(titleM) parts.push(`Title:${titleM[1].trim().slice(0,60)}`);
+    if(authorM) parts.push(`Author:${authorM[1].trim().slice(0,30)}`);
+    return parts.join(' ')||null;
+  }catch{return null;}
+}
+
+// ── Read pptx — extract title from first slide ──
+async function readPptxTitle(file){
+  try{
+    const zip=await JSZip.loadAsync(file);
+    // Slide 1 is usually ppt/slides/slide1.xml
+    const slideFile=zip.files['ppt/slides/slide1.xml'];
+    if(!slideFile) return null;
+    const xml=await slideFile.async('string');
+    // Extract text runs
+    const text=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+    const words=text.split(' ').filter(w=>w.length>1&&/[a-zA-Z0-9]/.test(w)).slice(0,30).join(' ');
+    return words.slice(0,150)||null;
+  }catch{return null;}
+}
+
+// ── Read xlsx/ods — extract sheet names + first row of sheet 1 ──
+async function readSpreadsheetMeta(file){
+  try{
+    const zip=await JSZip.loadAsync(file);
+    const parts=[];
+    // xlsx: xl/workbook.xml has sheet names
+    const wbFile=zip.files['xl/workbook.xml']||zip.files['content.xml'];
+    if(wbFile){
+      const xml=await wbFile.async('string');
+      // xlsx sheet names
+      const sheetNames=[...xml.matchAll(/name="([^"]+)"/g)].map(m=>m[1]).filter(n=>n&&n.length<40).slice(0,5);
+      if(sheetNames.length) parts.push(`Sheets:${sheetNames.join(',')}`);
+      // xlsx: first sheet data — xl/worksheets/sheet1.xml
+      const s1=zip.files['xl/worksheets/sheet1.xml'];
+      if(s1){
+        const sxml=await s1.async('string');
+        const vals=[...sxml.matchAll(/<v>([^<]+)<\/v>/g)].map(m=>m[1]).slice(0,10);
+        if(vals.length) parts.push(`Data:${vals.join(',').slice(0,80)}`);
+      }
+    }
+    return parts.join(' ')||null;
+  }catch{return null;}
 }
 
 // ─── Robust JSON extraction ───
@@ -1922,13 +2090,13 @@ async function organiseFiles(){
   const batches=[];
   for(let i=0;i<fileNames.length;i+=BATCH) batches.push(fileNames.slice(i,i+BATCH));
 
-  // Token budget — experimental includes file content (~80 tokens/file vs ~22 for normal)
+  // Token budget — experimental has content per file (~80t each), normal ~22t
   const outTokens = currentMode==='experimental' ? Math.min(16000, BATCH * 80) : Math.min(8000, BATCH * 22);
 
   const system=buildSystem();
   const isExp=currentMode==='experimental';
   const prov=document.getElementById('providerSelect').value;
-  const useVision=isExp; // vision thumbnails enabled for all providers in experimental mode
+  const useVision=isExp&&(prov==='gemini'||prov==='openai');
   const fmtDate=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
   let allResults={};
   conversationHistory=[];
