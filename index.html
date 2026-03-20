@@ -846,13 +846,14 @@ function initTheme(){
     : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
   // Update theme-color meta tag for Android status bar
   const themeColorMeta = document.getElementById('theme-color-meta');
-  themeColorMeta.content = saved==='dark'?'#0f0f0f':'#f7f7f5';
+  themeColorMeta.content = saved==='dark'?'#0f0f0f':'#0fa968'; // dark=dark bg, light=accent green
 }
 function toggleTheme(){
   const next = document.body.getAttribute('data-theme')==='dark'?'light':'dark';
   document.body.setAttribute('data-theme', next);
   localStorage.setItem('fm_theme', next);
   initTheme();
+  generateManifest(); // update manifest theme_color to match current theme
 }
 
 // ═══════════════════════════════
@@ -2820,9 +2821,9 @@ function getManifestJson(){
     start_url: location.pathname,
     scope: location.pathname.replace(/[^/]*$/, '') || '/',
     display: 'standalone',
-    background_color: '#f7f7f5',
-    theme_color: '#0fa968',
-    orientation: 'any',
+    background_color: document.body.getAttribute('data-theme')==='dark'?'#0f0f0f':'#f7f7f5',
+    theme_color: document.body.getAttribute('data-theme')==='dark'?'#0f0f0f':'#0fa968',
+    orientation: 'natural',
     icons: [
       { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
@@ -2918,9 +2919,9 @@ function generateManifest(){
     start_url: location.pathname,
     scope: scope,
     display: 'standalone',
-    background_color: '#f7f7f5',
-    theme_color: '#0fa968',
-    orientation: 'any',
+    background_color: document.body.getAttribute('data-theme')==='dark'?'#0f0f0f':'#f7f7f5',
+    theme_color: document.body.getAttribute('data-theme')==='dark'?'#0f0f0f':'#0fa968',
+    orientation: 'natural',
     icons: [
       { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
