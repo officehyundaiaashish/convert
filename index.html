@@ -1409,7 +1409,7 @@ const FILE_TYPES = {
   // Presentations
   presentation: ['ppt','pptx','odp','key'],
   // Code files — RENAME CAREFULLY (only folder, keep name unless clearly messy)
-  code:     ['js','ts','jsx','tsx','py','html','css','scss','sass','java','cpp','c','h','cs','go','rb','swift','kt','php','rs','vue','dart','lua','pl','sh','bat','ps1','bash','zsh','fish'],
+  code:     ['js','ts','jsx','tsx','py','html','css','scss','sass','java','cpp','c','h','cs','go','rb','swift','kt','php','rs','vue','dart','lua','pl','sh','bat','ps1','bash','zsh','fish','asm','m','mm','r','jl','ex','exs','elm','clj','fs','ml','nim','zig','v','cr'],
   // Data / Config
   data:     ['json','xml','yaml','yml','toml','ini','cfg','conf','env','sql','db','sqlite','sqlite3'],
   // Fonts
@@ -1581,7 +1581,8 @@ function readTextContent(file, maxChars=200){
       resolve(text||null);
     };
     reader.onerror=()=>resolve(null);
-    reader.readAsText(file.slice(0,4096));
+    // Read up to 32KB — enough for any meaningful text/code file first section
+    reader.readAsText(file.slice(0,32768));
   });
 }
 
@@ -1589,136 +1590,21 @@ function readTextContent(file, maxChars=200){
 function readPdfText(file){
   return new Promise(resolve=>{
     const reader=new FileReader();
-    reader.onload=async e=>{
-      try{
-        const buf=e.target.result;
-        const bytes=new Uint8Array(buf);
-        const raw=Array.from(bytes,b=>String.fromCharCode(b)).join('');
-        const words=[];
-        function isClean(s){
-          if(!s.length) return false;
-          const good=(s.match(/[a-zA-Z0-9 .,!?:;'\-]/g)||[]).length;
-          return good/s.length>0.6;
-        }
-        function extractFromChunk(chunk){
-          const btBlocks=chunk.match(/BT[\s\S]{0,2000}?ET/g)||[];
-          for(const block of btBlocks){
-            const lits=block.match(/\(([^)\\]*(?:\\.[^)\\]*)*)\)/g)||[];
-            for(const l of lits){
-              const s=l.slice(1,-1).replace(/\\n/g,' ').replace(/\\r/g,' ')
-                .replace(/\\t/g,' ').replace(/\\(.)/g,'$1')
-                .replace(/[^\x20-\x7E]/g,'').trim();
-              if(s.length>1&&/[a-zA-Z]/.test(s)&&isClean(s)) words.push(s);
-            }
-            const hexes=block.match(/<([0-9a-fA-F\s]{4,})>/g)||[];
-            for(const h of hexes){
-              const hex=h.slice(1,-1).replace(/\s/g,'');
-              if(hex.length%2!==0) continue;
-              let s='';
-              for(let i=0;i<hex.length;i+=2){
-                const c=parseInt(hex.slice(i,i+2),16);
-                if(c>=32&&c<127) s+=String.fromCharCode(c);
-              }
-              if(s.length>1&&/[a-zA-Z]/.test(s)&&isClean(s)) words.push(s);
-            }
-          }
-        }
-        extractFromChunk(raw);
-        if(words.length<6&&typeof DecompressionStream!=='undefined'){
-          const streamRe=/stream\r?\n([\s\S]*?)\r?\nendstream/g;
-          let m2; let tried=0;
-          while((m2=streamRe.exec(raw))!==null&&tried<12){
-            tried++;
-            const s2=m2.index+m2[0].indexOf('\n')+1;
-            const e2=m2.index+m2[0].length-'\nendstream'.length;
-            const ch=bytes.slice(s2,e2);
-            if(ch.length<20||ch[0]!==0x78) continue;
-            try{
-              const ds=new DecompressionStream('deflate');
-              const dw=ds.writable.getWriter(); dw.write(ch); dw.close();
-              const dp=[]; const dr=ds.readable.getReader();
-              const rd=async()=>{const{done,value}=await dr.read();if(!done){dp.push(value);await rd();}};
-              await rd();
-              const tot=dp.reduce((a,b)=>a+b.length,0);
-              const mg=new Uint8Array(tot); let off=0;
-              for(const p of dp){mg.set(p,off);off+=p.length;}
-              extractFromChunk(new TextDecoder('latin1').decode(mg));
-            }catch{}
-          }
-        }
-        for(const field of ['Title','Author','Subject','Keywords','Creator']){
-          const litM=raw.match(new RegExp('/'+field+'\\s*\\(([^)]{1,120})\\)'));
-          if(litM){
-            const s=litM[1].replace(/[^\x20-\x7E]/g,'').trim();
-            if(s.length>1&&/[a-zA-Z]/.test(s)) words.unshift(field+':'+s);
-          }
-          const hexM=raw.match(new RegExp('/'+field+'\\s*<([0-9a-fA-F\\s]{4,240})>'));
-          if(hexM){
-            const hex=hexM[1].replace(/\s/g,''); let s='';
-            for(let i=0;i<hex.length-1;i+=2){
-              const c=parseInt(hex.slice(i,i+2),16);
-              if(c>=32&&c<127) s+=String.fromCharCode(c);
-            }
-            if(s.length>1&&/[a-zA-Z]/.test(s)) words.unshift(field+':'+s);
-          }
-        }
-        const noise=new Set(['obj','endobj','stream','endstream','xref','trailer',
-          'startxref','true','false','null','Type','Page','Pages','Font','XObject',
-          'ColorSpace','Resources','MediaBox','Contents','Encoding','BaseFont','Length','Filter']);
-        const clean=[...new Set(words)].map(w=>w.trim())
-          .filter(w=>w.length>1&&!noise.has(w)&&/[a-zA-Z]/.test(w));
-        resolve(clean.join(' ').slice(0,300)||null);
-      }catch{resolve(null);}
-    };
-    reader.onerror=()=>resolve(null);
-    reader.readAsArrayBuffer(file.slice(0,524288));
-  });
-}
-
-// Extract text from legacy .doc files (OLE2 Compound Document)
-function readDocText(file){
-  return new Promise(resolve=>{
-    const reader=new FileReader();
     reader.onload=e=>{
       try{
-        const buf=e.target.result;
-        const bytes=new Uint8Array(buf);
-        if(bytes[0]!==0xD0||bytes[1]!==0xCF||bytes[2]!==0x11||bytes[3]!==0xE0) return resolve(null);
-        const words=[];
-        const u16=new TextDecoder('utf-16le').decode(buf);
-        let run='';
-        for(let i=0;i<u16.length;i++){
-          const c=u16[i];
-          if(c>=' '&&c<='~'){run+=c;}
-          else{
-            if(run.length>=4&&/[a-zA-Z]{3}/.test(run)){
-              const cl=run.replace(/\s+/g,' ').trim();
-              if(cl.length>3) words.push(cl);
-            }
-            run='';
-          }
-        }
-        let arun='';
-        for(let i=0;i<bytes.length;i++){
-          const b=bytes[i];
-          if(b>=32&&b<127){arun+=String.fromCharCode(b);}
-          else{
-            if(arun.length>=5&&/[a-zA-Z]{3}/.test(arun)) words.push(arun.trim());
-            arun='';
-          }
-        }
-        const noise=new Set(['Microsoft','Office','Word','Normal','Default',
-          'Arial','Times','Calibri','Tahoma','Verdana','Symbol','Wingdings',
-          'Heading','Body','Style','Template','Document']);
-        const clean=[...new Set(words)].map(w=>w.trim())
-          .filter(w=>w.length>2&&!noise.has(w)&&/[a-zA-Z]{2}/.test(w)
-            &&!/^(\d+|[^a-zA-Z]+)$/.test(w))
-          .slice(0,60);
-        resolve(clean.join(' ').slice(0,300)||null);
+        const text=e.target.result||'';
+        // Extract readable strings from PDF stream
+        const matches=text.match(/\(([^\)]{3,80})\)/g)||[];
+        const words=matches
+          .map(m=>m.slice(1,-1).replace(/[^\x20-\x7E]/g,'').trim())
+          .filter(w=>w.length>2&&/[a-zA-Z]/.test(w))
+          .slice(0,40)
+          .join(' ');
+        resolve(words.slice(0,300)||null);
       }catch{resolve(null);}
     };
     reader.onerror=()=>resolve(null);
-    reader.readAsArrayBuffer(file.slice(0,524288));
+    reader.readAsBinaryString(file.slice(0,65536));
   });
 }
 
@@ -1821,20 +1707,21 @@ async function extractFileContext(file, useVision=false){
       const text=await readPdfText(file);
       if(text) parts.push(`Content:${text.slice(0,200)}`);
     }
-    else if(ext==='doc'){
-      const text=await readDocText(file);
-      if(text) parts.push(`Content:${text.slice(0,200)}`);
-    }
-    else if(['txt','md','csv','log','xml','html','htm'].includes(ext)){
-      const text=await readTextContent(file,150);
+    else if(['txt','md','csv','log','xml','html','htm','rtf','rst','adoc'].includes(ext)){
+      const text=await readTextContent(file,400);
       if(text) parts.push(`Content:${text}`);
     }
-    else if(['js','ts','py','java','cpp','c','go','rb','swift','kt','rs','php'].includes(ext)){
-      const text=await readTextContent(file,120);
+    else if(['js','ts','jsx','tsx','py','java','cpp','c','h','cs','go','rb','swift',
+             'kt','php','rs','vue','dart','lua','pl','sh','bat','ps1','bash','zsh',
+             'fish','scss','sass','css','asm','m','mm','r','jl','ex','exs','elm',
+             'clj','fs','ml','nim','zig','v','cr'].includes(ext)){
+      const text=await readTextContent(file,400);
       if(text) parts.push(`Code:${text}`);
     }
-    else if(['json','yaml','yml','toml','env'].includes(ext)){
-      const text=await readTextContent(file,100);
+    else if(['json','yaml','yml','toml','env','ini','cfg','conf','properties',
+             'sql','graphql','proto','tf','hcl','Makefile','makefile'].includes(ext)||
+            file.name==='Makefile'||file.name==='Dockerfile'||file.name==='.env'){
+      const text=await readTextContent(file,400);
       if(text) parts.push(`Data:${text}`);
     }
     else if(['zip','rar','7z'].includes(ext)){
