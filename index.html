@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FolderMind — AI File Organiser</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root {
@@ -89,9 +88,45 @@ textarea{resize:vertical;min-height:90px;line-height:1.6;}
 .api-status.connected .status-dot{animation:pulse 1.5s ease infinite;}
 .api-status.testing .status-dot{animation:pulse 0.6s ease infinite;}
 
-/* Key save row */
-.key-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;}
-.key-actions span{font-size:11px;color:var(--muted);}
+/* Saved keys panel */
+.saved-keys{margin-top:10px;display:flex;flex-direction:column;gap:5px;}
+.saved-key-row{display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;cursor:pointer;transition:all 0.15s;}
+.saved-key-row:hover{border-color:var(--accent);}
+.saved-key-row.active-key{border-color:var(--accent3);background:rgba(15,169,104,0.06);}
+.sk-dot{width:7px;height:7px;border-radius:50%;background:var(--border);flex-shrink:0;}
+.saved-key-row.active-key .sk-dot{background:var(--accent3);box-shadow:0 0 5px var(--accent3);animation:pulse 1.5s ease infinite;}
+.sk-name{flex:1;font-size:12px;font-weight:500;}
+.sk-provider{font-size:10px;color:var(--muted);padding:2px 6px;border:1px solid var(--border);border-radius:4px;}
+.sk-status{font-size:10px;color:var(--accent3);}
+.sk-del{background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:0 2px;line-height:1;transition:color 0.1s;flex-shrink:0;}
+.sk-del:hover{color:#c0392b;}
+.add-key-row{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}
+.add-key-row input{flex:1 1 120px;min-width:0;}
+
+/* Before / After structure */
+.struct-tabs{display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:10px;}
+.struct-tab{flex:1;padding:8px 12px;font-size:12px;font-weight:500;cursor:pointer;text-align:center;background:var(--surface2);border:none;color:var(--muted);transition:all 0.15s;border-right:1px solid var(--border);}
+.struct-tab:last-child{border-right:none;}
+.struct-tab.active{background:var(--accent);color:white;}
+.struct-panel{display:none;}
+.struct-panel.active{display:block;}
+
+/* Tree node styles — cleaner */
+.tree-root{font-size:12px;line-height:1.4;}
+.tree-node{padding-left:16px;position:relative;}
+.tree-node::before{content:'';position:absolute;left:6px;top:0;bottom:0;width:1px;background:var(--border);}
+.tree-item{display:flex;align-items:center;gap:5px;padding:3px 4px;border-radius:5px;cursor:default;}
+.tree-item:hover{background:var(--surface2);}
+.tree-item.folder{cursor:pointer;}
+.tree-item.folder:hover{background:var(--surface2);}
+.tree-icon{font-size:13px;flex-shrink:0;width:16px;text-align:center;}
+.tree-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tree-name.renamed{color:var(--accent3);}
+.tree-count{font-size:10px;color:var(--muted);flex-shrink:0;}
+.tree-children{overflow:hidden;transition:max-height 0.2s ease;}
+.tree-arrow{font-size:9px;color:var(--muted);transition:transform 0.15s;flex-shrink:0;}
+.tree-arrow.open{transform:rotate(90deg);}
+.orig-path{font-size:10px;color:var(--muted);margin-left:21px;padding-bottom:1px;}
 
 /* Select methods */
 .select-methods{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
@@ -148,7 +183,7 @@ textarea{resize:vertical;min-height:90px;line-height:1.6;}
 .stat-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;}
 
 /* File tree */
-.file-tree{border:1px solid var(--border);border-radius:8px;overflow:hidden;max-height:360px;overflow-y:auto;background:var(--surface);}
+.file-tree{border:1px solid var(--border);border-radius:8px;overflow:hidden;max-height:520px;overflow-y:auto;background:var(--surface);}
 .file-tree::-webkit-scrollbar{width:3px;}
 .file-tree::-webkit-scrollbar-thumb{background:var(--border);}
 .folder-group{border-bottom:1px solid var(--border);}
@@ -229,20 +264,24 @@ textarea{resize:vertical;min-height:90px;line-height:1.6;}
   <!-- Step 1: API -->
   <div class="card">
     <div class="card-label">Step 1 — API Setup</div>
-    <div class="input-row">
-      <input type="password" id="apiKey" placeholder="Paste your API key here..." oninput="resetApiStatus()" />
+
+    <!-- Saved keys list -->
+    <div id="savedKeysList" class="saved-keys"></div>
+
+    <!-- Add new key -->
+    <div class="add-key-row" id="addKeyRow">
+      <input type="password" id="apiKey" placeholder="Paste API key..." oninput="resetApiStatus()" style="flex:1 1 160px;" />
+      <input type="text" id="keyNickname" placeholder="Nickname (e.g. My Groq)" style="flex:1 1 100px;" />
       <button class="btn btn-secondary" onclick="toggleKeyVis()" title="Show/Hide">👁</button>
       <button class="btn btn-secondary" id="testBtn" onclick="testApiKey()">Test</button>
+      <button class="btn btn-primary" onclick="saveNewKey()">Save</button>
     </div>
-    <div class="key-actions">
-      <button class="btn btn-secondary" onclick="saveKey()" style="font-size:12px;padding:5px 10px;">💾 Save key</button>
-      <button class="btn btn-secondary" onclick="clearKey()" style="font-size:12px;padding:5px 10px;">🗑 Clear saved</button>
-      <span id="keySavedNote" class="hidden" style="font-size:11px;color:var(--accent3);">✓ Key saved locally (encrypted)</span>
-    </div>
+
     <div class="api-status" id="apiStatus">
       <div class="status-dot"></div>
-      <span id="apiStatusText">Not tested — click Test to verify</span>
+      <span id="apiStatusText">Enter a key above or select a saved one</span>
     </div>
+
     <div class="sg sg-3" style="margin-top:10px;">
       <div>
         <label>Provider</label>
@@ -352,26 +391,32 @@ Examples:
 
     <div class="stats-row" id="statsRow"></div>
 
-    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text);">Folder Structure Preview</div>
-    <div class="file-tree" id="fileTree"></div>
+    <!-- Before / After tabs -->
+    <div class="struct-tabs">
+      <button class="struct-tab active" onclick="switchTab('before',this)">📁 Original Structure</button>
+      <button class="struct-tab" onclick="switchTab('after',this)">✨ Organised Structure</button>
+    </div>
+
+    <div id="panelBefore" class="struct-panel active">
+      <div class="file-tree tree-root" id="originalTree"></div>
+    </div>
+    <div id="panelAfter" class="struct-panel">
+      <div class="file-tree tree-root" id="fileTree"></div>
+    </div>
 
     <!-- Revise -->
     <div class="revision-box">
       <div class="revision-label">Not satisfied? Revise</div>
       <div class="revision-row">
         <textarea id="revisionPrompt" placeholder="Tell AI what to change...
-
-Examples:
 • Move all PDFs into a single Documents folder
 • I want shorter folder names, max 2 words
-• Put screenshots in their own folder
-• Rename files to include the date at the start
-• Merge Work and Personal into one folder"></textarea>
-        <button class="btn btn-warn" id="reviseBtn" onclick="reviseFiles()">🔄 Revise</button>
+• Rename files to include the date at the start"></textarea>
+        <button class="btn btn-warn" id="reviseBtn" onclick="reviseFiles()">Revise</button>
       </div>
     </div>
 
-    <!-- Bottom buttons — full width, no overflow -->
+    <!-- Bottom buttons -->
     <div class="results-actions">
       <button class="btn btn-secondary" onclick="expandAll()">Expand All</button>
       <button class="btn btn-secondary" onclick="collapseAll()">Collapse All</button>
@@ -390,65 +435,178 @@ Examples:
 let selectedFiles = [];
 let organiseResult = {};
 let conversationHistory = [];
+let origFileMap = {}; // global — persists for download
 
 // ─── Theme ───
 function initTheme(){
   const saved = localStorage.getItem('fm_theme') || 'light';
   document.body.setAttribute('data-theme', saved);
-  document.getElementById('themeBtn').textContent = saved === 'dark' ? '☀️' : '🌙';
+  document.getElementById('themeBtn').textContent = saved==='dark'?'☀️':'🌙';
 }
 function toggleTheme(){
-  const cur = document.body.getAttribute('data-theme') || 'light';
-  const next = cur === 'dark' ? 'light' : 'dark';
+  const next = document.body.getAttribute('data-theme')==='dark'?'light':'dark';
   document.body.setAttribute('data-theme', next);
-  document.getElementById('themeBtn').textContent = next === 'dark' ? '☀️' : '🌙';
+  document.getElementById('themeBtn').textContent = next==='dark'?'☀️':'🌙';
   localStorage.setItem('fm_theme', next);
 }
 initTheme();
 
-// ─── API Key localStorage (obfuscated, not true encryption but prevents casual reading) ───
-function encodeKey(k){ return btoa(k.split('').reverse().join('')); }
-function decodeKey(e){ try{ return atob(e).split('').reverse().join(''); }catch{ return ''; } }
+// ─── Multi-key storage ───
+// Format: [{id, nickname, provider, encodedKey, connected}]
+function encodeKey(k){ return btoa(unescape(encodeURIComponent(k.split('').reverse().join('')))); }
+function decodeKey(e){ try{ return decodeURIComponent(escape(atob(e))).split('').reverse().join(''); }catch{ return ''; } }
 
-function saveKey(){
-  const k = document.getElementById('apiKey').value.trim();
-  if(!k){ showToast('No key to save', 'error'); return; }
-  localStorage.setItem('fm_apikey', encodeKey(k));
-  document.getElementById('keySavedNote').classList.remove('hidden');
-  showToast('API key saved locally', 'success');
-  setTimeout(()=>document.getElementById('keySavedNote').classList.add('hidden'), 3000);
+function loadKeys(){ try{ return JSON.parse(localStorage.getItem('fm_keys')||'[]'); }catch{ return []; } }
+function saveKeys(keys){ localStorage.setItem('fm_keys', JSON.stringify(keys)); }
+
+let activeKeyId = localStorage.getItem('fm_activekey') || null;
+
+function renderSavedKeys(){
+  const keys = loadKeys();
+  const list = document.getElementById('savedKeysList');
+  if(!keys.length){ list.innerHTML=''; return; }
+  list.innerHTML = keys.map(k=>`
+    <div class="saved-key-row ${k.id===activeKeyId?'active-key':''}" onclick="selectKey('${k.id}')">
+      <div class="sk-dot"></div>
+      <span class="sk-name">${k.nickname||'Unnamed key'}</span>
+      <span class="sk-provider">${k.provider||'openrouter'}</span>
+      ${k.id===activeKeyId?'<span class="sk-status">● Active</span>':''}
+      <button class="sk-del" onclick="deleteKey(event,'${k.id}')" title="Delete">×</button>
+    </div>`).join('');
 }
-function clearKey(){
-  localStorage.removeItem('fm_apikey');
+
+function saveNewKey(){
+  const rawKey = document.getElementById('apiKey').value.trim();
+  const nickname = document.getElementById('keyNickname').value.trim();
+  const provider = document.getElementById('providerSelect').value;
+  if(!rawKey){ showToast('Enter a key first','error'); return; }
+
+  const keys = loadKeys();
+  const id = 'k_'+Date.now();
+  keys.push({ id, nickname: nickname||`Key ${keys.length+1}`, provider, encodedKey: encodeKey(rawKey) });
+  saveKeys(keys);
+
+  // Auto-select this key
+  activeKeyId = id;
+  localStorage.setItem('fm_activekey', id);
+
   document.getElementById('apiKey').value = '';
+  document.getElementById('keyNickname').value = '';
+  renderSavedKeys();
+  showToast(`Key "${nickname||'Key '+keys.length}" saved!`,'success');
+}
+
+function selectKey(id){
+  const keys = loadKeys();
+  const k = keys.find(x=>x.id===id);
+  if(!k) return;
+
+  activeKeyId = id;
+  localStorage.setItem('fm_activekey', id);
+
+  // Load key into input + set provider
+  document.getElementById('apiKey').value = decodeKey(k.encodedKey);
+  document.getElementById('providerSelect').value = k.provider||'openrouter';
+  updateModels();
+  renderSavedKeys();
   resetApiStatus();
-  showToast('Saved key cleared', 'info');
+  showToast(`Switched to "${k.nickname}"`, 'info');
 }
-function loadSavedKey(){
-  const saved = localStorage.getItem('fm_apikey');
-  if(saved){
-    const k = decodeKey(saved);
-    if(k){ document.getElementById('apiKey').value = k; }
+
+function deleteKey(e, id){
+  e.stopPropagation();
+  let keys = loadKeys();
+  const k = keys.find(x=>x.id===id);
+  keys = keys.filter(x=>x.id!==id);
+  saveKeys(keys);
+  if(activeKeyId===id){
+    activeKeyId = keys.length ? keys[0].id : null;
+    localStorage.setItem('fm_activekey', activeKeyId||'');
+    if(activeKeyId) selectKey(activeKeyId);
+    else { document.getElementById('apiKey').value=''; resetApiStatus(); }
   }
+  renderSavedKeys();
+  showToast(`Deleted "${k?.nickname||'key'}"`, 'info');
 }
-loadSavedKey();
+
+function autoLoadActiveKey(){
+  const keys = loadKeys();
+  if(!keys.length) return;
+  // Find active key or default to first
+  const target = keys.find(k=>k.id===activeKeyId) || keys[0];
+  if(!target) return;
+  activeKeyId = target.id;
+  localStorage.setItem('fm_activekey', target.id);
+  document.getElementById('apiKey').value = decodeKey(target.encodedKey);
+  document.getElementById('providerSelect').value = target.provider||'openrouter';
+  updateModels();
+  renderSavedKeys();
+  // Auto-test silently on load
+  silentTestKey(target);
+}
+
+async function silentTestKey(keyObj){
+  const rawKey = decodeKey(keyObj.encodedKey);
+  if(!rawKey) return;
+  try{
+    const prov = keyObj.provider||'openrouter';
+    const endpoint = prov==='groq'
+      ?'https://api.groq.com/openai/v1/chat/completions'
+      :'https://openrouter.ai/api/v1/chat/completions';
+    const headers = {'Content-Type':'application/json','Authorization':`Bearer ${rawKey}`};
+    if(prov==='openrouter'){headers['HTTP-Referer']=window.location.href;headers['X-Title']='FolderMind';}
+    const model = MODELS[prov]?.[0]?.value;
+    const res = await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({model,messages:[{role:'user',content:'hi'}],max_tokens:3})});
+    const data = await res.json();
+    if(res.ok){
+      const short = (data.model||model||'').split('/').pop().replace(':free','');
+      setApiStatus('connected',`Connected — ${prov==='groq'?'Groq':'OpenRouter'}: ${short}`);
+    } else {
+      setApiStatus('failed',`Saved key error: ${data.error?.message?.slice(0,40)||'check key'}`);
+    }
+  }catch(e){ /* silent */ }
+}
+
+// Init on page load
+renderSavedKeys();
+autoLoadActiveKey();
 
 // ─── Models ───
 const MODELS = {
   openrouter:[
-    {value:'meta-llama/llama-3.1-8b-instruct:free',label:'Llama 3.1 8B (Free)'},
-    {value:'mistralai/mistral-7b-instruct:free',label:'Mistral 7B (Free)'},
-    {value:'google/gemma-2-9b-it:free',label:'Gemma 2 9B (Free)'},
-    {value:'qwen/qwen-2.5-7b-instruct:free',label:'Qwen 2.5 7B (Free)'},
-    {value:'meta-llama/llama-3.2-3b-instruct:free',label:'Llama 3.2 3B (Free)'},
+    // ─── NVIDIA (Free) ───
+    {value:'nvidia/llama-3.1-nemotron-70b-instruct:free',       label:'NVIDIA Nemotron 70B ⭐'},
+    {value:'nvidia/llama-3.3-nemotron-super-49b-v1:free',       label:'NVIDIA Nemotron Super 49B'},
+    {value:'nvidia/nemotron-nano-9b-v2:free',                   label:'NVIDIA Nemotron Nano 9B'},
+    // ─── DeepSeek (Free) ───
+    {value:'deepseek/deepseek-r1:free',                         label:'DeepSeek R1 (Reasoning) 🧠'},
+    {value:'deepseek/deepseek-chat-v3-0324:free',               label:'DeepSeek V3 Chat'},
+    {value:'deepseek/deepseek-r1-distill-llama-70b:free',       label:'DeepSeek R1 Distill 70B'},
+    {value:'deepseek/deepseek-r1-0528-qwen3-8b:free',           label:'DeepSeek R1 Qwen3 8B'},
+    {value:'deepseek/deepseek-r1-distill-qwen-14b:free',        label:'DeepSeek R1 Qwen 14B'},
+    // ─── Meta Llama (Free) ───
+    {value:'meta-llama/llama-3.3-70b-instruct:free',            label:'Llama 3.3 70B Instruct'},
+    {value:'meta-llama/llama-3.1-8b-instruct:free',             label:'Llama 3.1 8B'},
+    // ─── Google (Free) ───
+    {value:'google/gemma-3-27b-it:free',                        label:'Gemma 3 27B'},
+    {value:'google/gemma-3-12b-it:free',                        label:'Gemma 3 12B'},
+    // ─── Qwen / Alibaba (Free) ───
+    {value:'qwen/qwen3-8b:free',                                label:'Qwen3 8B'},
+    {value:'qwen/qwen3-14b:free',                               label:'Qwen3 14B'},
+    {value:'qwen/qwen3-30b-a3b:free',                           label:'Qwen3 30B MoE'},
+    {value:'qwen/qwen-2.5-72b-instruct:free',                   label:'Qwen 2.5 72B'},
+    // ─── Mistral (Free) ───
+    {value:'mistralai/mistral-7b-instruct:free',                label:'Mistral 7B'},
+    // ─── Microsoft (Free) ───
+    {value:'microsoft/phi-4:free',                              label:'Microsoft Phi-4'},
   ],
   groq:[
-    {value:'llama-3.1-8b-instant',label:'Llama 3.1 8B Instant ⚡'},
-    {value:'llama3-8b-8192',label:'Llama 3 8B'},
-    {value:'llama3-70b-8192',label:'Llama 3 70B'},
-    {value:'mixtral-8x7b-32768',label:'Mixtral 8x7B (32k)'},
-    {value:'gemma2-9b-it',label:'Gemma 2 9B'},
-    {value:'llama-3.3-70b-versatile',label:'Llama 3.3 70B'},
+    {value:'llama-3.1-8b-instant',      label:'Llama 3.1 8B Instant ⚡'},
+    {value:'llama3-70b-8192',           label:'Llama 3 70B'},
+    {value:'llama-3.3-70b-versatile',   label:'Llama 3.3 70B Versatile'},
+    {value:'mixtral-8x7b-32768',        label:'Mixtral 8x7B (32k)'},
+    {value:'gemma2-9b-it',              label:'Gemma 2 9B'},
+    {value:'llama3-8b-8192',            label:'Llama 3 8B'},
   ]
 };
 function updateModels(){
@@ -474,7 +632,7 @@ function getHeaders(key){
 
 // ─── File inputs ───
 document.getElementById('fileInput').addEventListener('change',e=>handleFiles(Array.from(e.target.files)));
-document.getElementById('folderInput').addEventListener('change',e=>handleFiles(Array.from(e.target.files).filter(f=>f.size>0)));
+document.getElementById('folderInput').addEventListener('change',e=>handleFiles(Array.from(e.target.files)));
 const dz=document.getElementById('dropzone');
 dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
 dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
@@ -488,17 +646,24 @@ function formatSize(b){
 
 function handleFiles(files){
   if(!files.length)return;
-  selectedFiles = [...selectedFiles, ...files];
-  // Dedupe by name+size
+  // Accept ALL file types including shortcuts (.lnk), icons (.ico), empty files
+  // Only skip macOS hidden system files like .DS_Store and __MACOSX
+  const filtered = files.filter(f => {
+    const name = f.name;
+    if(name === '.DS_Store' || name === 'Thumbs.db' || name.startsWith('__MACOSX')) return false;
+    return true; // keep everything else including size=0 shortcuts
+  });
+  selectedFiles = [...selectedFiles, ...filtered];
+  // Dedupe by path+name
   const seen = new Set();
   selectedFiles = selectedFiles.filter(f=>{
-    const k = (f.webkitRelativePath||f.name)+f.size;
+    const k = (f.webkitRelativePath||f.name);
     if(seen.has(k))return false; seen.add(k); return true;
   });
   renderSelectedFiles();
   document.getElementById('organiseBtn').disabled = false;
   setStep(2);
-  showToast(`${files.length} file${files.length!==1?'s':''} added`, 'info');
+  showToast(`${filtered.length} file${filtered.length!==1?'s':''} added`, 'info');
 }
 
 function renderSelectedFiles(){
@@ -534,7 +699,7 @@ function removeFile(i){
 }
 
 function clearAll(){
-  selectedFiles=[];organiseResult={};conversationHistory=[];
+  selectedFiles=[];organiseResult={};conversationHistory=[];origFileMap={};
   ['fileInput','folderInput'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('resultsCard').classList.add('hidden');
   document.getElementById('statusText').textContent='';
@@ -606,11 +771,14 @@ function buildSystem(){
   const ci={natural:'Title Case for names.',lower:'All lowercase.',upper:'ALL UPPERCASE.',sentence:'Sentence case.',original:'Keep original casing.'}[s];
   return `You are a file organisation assistant. ${ci}
 CRITICAL rules:
-- NEVER change file extensions — extensions must remain exactly as they are
-- NEVER put the extension word inside the file name base (e.g. do NOT name a file "Report PDF" — just "Report")
+- Handle ALL file types: documents, images, videos, audio, shortcuts (.lnk, .url), icons (.ico), executables (.exe), archives, code files, and any other type
+- Shortcuts (.lnk, .url) should be grouped with what they point to (e.g. a shortcut to a game goes in Games)
+- NEVER change file extensions — keep them exactly as they are
+- NEVER put the extension word inside the file name base (e.g. do NOT write "Report PDF" — just "Report")
 - NEVER use underscores between words — use spaces
 - Return ONLY a valid raw JSON object, no markdown, no code fences
-- Format: { "original_key": { "folder": "Folder/Sub", "newName": "Clean Name.ext" } }
+- You MUST return an entry for EVERY file given to you — do not skip any
+- Format: { "original_filename": { "folder": "Folder/Sub", "newName": "Clean Name.ext" } }
 - Max folder depth: 3 levels, use / as separator`;
 }
 
@@ -633,19 +801,17 @@ async function callAI(key,model,messages,maxTokens=4000){
 }
 
 // ─── Post-process AI result ───
-function postProcess(results, origFileMap){
+function postProcess(results){
   for(const k of Object.keys(results)){
     const info = results[k];
-    const origFile = origFileMap[k];
+    // Find original file — try full path then just filename
+    const origFile = origFileMap[k] || origFileMap[k.split('/').pop()] || 
+      Object.values(origFileMap).find(f=>f.name===k.split('/').pop());
     const origName = origFile ? origFile.name : k.split('/').pop();
 
-    // 1. Sanitize
     let newName = sanitize(info.newName || origName);
-    // 2. Strip extension word from name base
     newName = stripExtFromName(newName);
-    // 3. Force original extension (NEVER let AI change it)
     newName = protectExtension(newName, origName);
-    // 4. Apply case
     newName = applyCase(newName);
 
     info.newName = newName;
@@ -667,7 +833,7 @@ async function organiseFiles(){
   document.getElementById('progressWrap').classList.remove('hidden');
   setStep(3);
 
-  const origFileMap={};
+  origFileMap = {};
   for(const f of selectedFiles) origFileMap[f.webkitRelativePath||f.name]=f;
 
   const fileNames=selectedFiles.map(f=>f.webkitRelativePath||f.name);
@@ -696,13 +862,28 @@ async function organiseFiles(){
     }
   }
 
-  // Fallback missing
+  // Fallback: any selectedFile not covered by AI response goes to Unsorted
+  // Use robust matching — AI may return just filename, our keys may be full paths
+  const coveredFiles = new Set();
+  for(const k of Object.keys(allResults)){
+    // find which selectedFile this result key refers to
+    for(const f of selectedFiles){
+      const fKey = f.webkitRelativePath||f.name;
+      if(fKey === k || f.name === k || f.name === k.split('/').pop()){
+        coveredFiles.add(fKey);
+        break;
+      }
+    }
+  }
+  // Add uncovered files as Unsorted
   for(const f of selectedFiles){
-    const k=f.webkitRelativePath||f.name;
-    if(!allResults[k])allResults[k]={folder:'Unsorted',newName:f.name};
+    const k = f.webkitRelativePath||f.name;
+    if(!coveredFiles.has(k)){
+      allResults[k] = {folder:'Unsorted', newName:f.name};
+    }
   }
 
-  organiseResult = postProcess(allResults, origFileMap);
+  organiseResult = postProcess(allResults);
   setProgress(100);
   renderResults(organiseResult);
   setStatus('Preview ready — review, revise if needed, then download.');
@@ -722,9 +903,7 @@ async function reviseFiles(){
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
   setStatus('Revising...');
 
-  const origFileMap={};
-  for(const f of selectedFiles) origFileMap[f.webkitRelativePath||f.name]=f;
-
+  // use global origFileMap
   const msgs=[
     ...conversationHistory,
     {role:'user',content:`Revise with these changes:\n${revision}\n\nReturn COMPLETE updated JSON for ALL files.`}
@@ -737,7 +916,7 @@ async function reviseFiles(){
     if(organiseResult[k]!==undefined) organiseResult[k]=info;
   }
 
-  organiseResult = postProcess(organiseResult, origFileMap);
+  organiseResult = postProcess(organiseResult);
   conversationHistory.push(
     {role:'user',content:`Revise: ${revision}`},
     {role:'assistant',content:JSON.stringify(parsed)}
@@ -750,10 +929,112 @@ async function reviseFiles(){
   showToast('Structure revised!','success');
 }
 
-// ─── Render ───
+// ─── Tab switcher ───
+function switchTab(name, btn){
+  document.querySelectorAll('.struct-tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.struct-panel').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('panel'+(name==='before'?'Before':'After')).classList.add('active');
+}
+
+// ─── Build original folder tree from selectedFiles ───
+function buildOriginalTree(){
+  const container = document.getElementById('originalTree');
+  container.innerHTML = '';
+
+  // Group files by their original folder path
+  const tree = {}; // nested object
+  for(const f of selectedFiles){
+    const parts = f.webkitRelativePath
+      ? f.webkitRelativePath.split('/')
+      : [f.name];
+    let node = tree;
+    for(let i=0;i<parts.length-1;i++){
+      const p = parts[i];
+      if(!node[p]) node[p] = {__files:[]};
+      node = node[p];
+    }
+    const fname = parts[parts.length-1];
+    if(!node.__files) node.__files=[];
+    node.__files.push({name:fname, file:f});
+  }
+
+  function countAll(node){
+    let c = (node.__files||[]).length;
+    for(const k of Object.keys(node)) if(k!=='__files') c+=countAll(node[k]);
+    return c;
+  }
+
+  function renderNode(node, label, depth){
+    const el = document.createElement('div');
+
+    if(label){
+      // Folder row
+      const total = countAll(node);
+      const row = document.createElement('div');
+      row.className='tree-item folder';
+      row.style.paddingLeft=(depth*14)+'px';
+      const arrow = document.createElement('span');
+      arrow.className='tree-arrow open';
+      arrow.textContent='▶';
+      const ic = document.createElement('span');
+      ic.className='tree-icon'; ic.textContent='📁';
+      const nm = document.createElement('span');
+      nm.className='tree-name'; nm.textContent=label;
+      const ct = document.createElement('span');
+      ct.className='tree-count'; ct.textContent=`${total}`;
+      row.append(arrow,ic,nm,ct);
+
+      const children = document.createElement('div');
+      children.className='tree-children';
+
+      row.onclick=()=>{
+        const open = arrow.classList.toggle('open');
+        children.style.maxHeight = open ? children.scrollHeight+'px' : '0';
+        children.style.maxHeight = open ? 'none' : '0';
+        children.style.overflow = open ? 'visible' : 'hidden';
+      };
+
+      el.append(row, children);
+
+      // Sub-folders
+      for(const k of Object.keys(node).filter(k=>k!=='__files').sort()){
+        children.appendChild(renderNode(node[k], k, depth+1));
+      }
+      // Files
+      for(const f of (node.__files||[])){
+        const fr = document.createElement('div');
+        fr.className='tree-item';
+        fr.style.paddingLeft=((depth+1)*14)+'px';
+        fr.innerHTML=`<span class="tree-icon">${icon(f.name)}</span><span class="tree-name">${f.name}</span>`;
+        children.appendChild(fr);
+      }
+    } else {
+      // Root — no label, just render children
+      for(const k of Object.keys(node).filter(k=>k!=='__files').sort()){
+        el.appendChild(renderNode(node[k], k, depth));
+      }
+      for(const f of (node.__files||[])){
+        const fr = document.createElement('div');
+        fr.className='tree-item';
+        fr.style.paddingLeft=(depth*14)+'px';
+        fr.innerHTML=`<span class="tree-icon">${icon(f.name)}</span><span class="tree-name">${f.name}</span>`;
+        el.appendChild(fr);
+      }
+    }
+    return el;
+  }
+
+  container.appendChild(renderNode(tree, null, 0));
+}
+
+// ─── Render organised results ───
 function renderResults(results){
   const card=document.getElementById('resultsCard');
   card.classList.remove('hidden');
+
+  // Build original structure first
+  buildOriginalTree();
 
   const folders={};
   for(const[orig,info]of Object.entries(results)){
@@ -774,44 +1055,104 @@ function renderResults(results){
     <div class="stat-box"><div class="stat-num">${fCount}</div><div class="stat-label">Folders</div></div>
     <div class="stat-box"><div class="stat-num">${renamed}</div><div class="stat-label">Renamed</div></div>`;
 
-  const tree=document.getElementById('fileTree');
-  tree.innerHTML='';
-
-  for(const[folder,files]of Object.entries(folders).sort((a,b)=>a[0].localeCompare(b[0]))){
-    const parts=folder.split('/');
-    const indent=(parts.length-1)*10;
-    const folderDisp=parts.map((p,i)=>i<parts.length-1?`<span style="color:var(--muted)">${p} / </span>`:`<strong>${p}</strong>`).join('');
-    const group=document.createElement('div');
-    group.className='folder-group';
-    group.innerHTML=`
-      <div class="folder-header" onclick="toggleFolder(this)">
-        <span style="margin-left:${indent}px;flex-shrink:0;">📁</span>
-        <span class="folder-name">${folderDisp}</span>
-        <span class="folder-count">${files.length} file${files.length!==1?'s':''}</span>
-        <span class="folder-toggle">▶</span>
-      </div>
-      <div class="file-list">
-        ${files.map(f=>{
-          const origBase=f.orig.split('/').pop();
-          const changed=f.newName!==origBase;
-          return`<div class="file-item">
-            <span class="fi-icon">${icon(f.newName)}</span>
-            <span class="fi-orig" title="${origBase}">${origBase}</span>
-            ${changed?`<span class="fi-arrow">→</span><span class="fi-new" title="${f.newName}">${f.newName}</span>`:''}
-          </div>`;
-        }).join('')}
-      </div>`;
-    tree.appendChild(group);
+  // Build organised tree — nested object approach
+  const organTree = {};
+  for(const[orig,info]of Object.entries(results)){
+    const folderPath = info.folder||'Unsorted';
+    const parts = folderPath.split('/');
+    let node = organTree;
+    for(const p of parts){
+      if(!node[p]) node[p]={__files:[]};
+      node = node[p];
+    }
+    if(!node.__files) node.__files=[];
+    node.__files.push({orig, newName: info.newName||orig.split('/').pop()});
   }
 
-  tree.querySelectorAll('.folder-header').forEach((h,i)=>{if(i<4)toggleFolder(h);});
+  function renderOrgNode(node, label, depth){
+    const el = document.createElement('div');
+    if(label){
+      const fileCount = countFilesInNode(node);
+      const row = document.createElement('div');
+      row.className='tree-item folder';
+      row.style.paddingLeft=(depth*14)+'px';
+      const arrow = document.createElement('span');
+      arrow.className='tree-arrow open'; arrow.textContent='▶';
+      const ic = document.createElement('span');
+      ic.className='tree-icon'; ic.textContent='📁';
+      const nm = document.createElement('span');
+      nm.className='tree-name'; nm.textContent=label;
+      const ct = document.createElement('span');
+      ct.className='tree-count'; ct.textContent=fileCount;
+      row.append(arrow,ic,nm,ct);
+
+      const children = document.createElement('div');
+      children.className='tree-children';
+      row.onclick=()=>{
+        const open=arrow.classList.toggle('open');
+        children.style.maxHeight=open?'none':'0';
+        children.style.overflow=open?'visible':'hidden';
+      };
+      el.append(row,children);
+
+      for(const k of Object.keys(node).filter(k=>k!=='__files').sort()){
+        children.appendChild(renderOrgNode(node[k],k,depth+1));
+      }
+      for(const f of (node.__files||[])){
+        const origBase=f.orig.split('/').pop();
+        const changed=f.newName!==origBase;
+        const fr=document.createElement('div');
+        fr.className='tree-item';
+        fr.style.paddingLeft=((depth+1)*14)+'px';
+        fr.innerHTML=`<span class="tree-icon">${icon(f.newName)}</span>`+
+          `<span class="tree-name${changed?' renamed':''}" title="${f.newName}">${f.newName}</span>`+
+          (changed?`<span style="font-size:10px;color:var(--muted);margin-left:4px;flex-shrink:0;" title="was: ${origBase}">← ${origBase}</span>`:'');
+        children.appendChild(fr);
+      }
+    } else {
+      for(const k of Object.keys(node).filter(k=>k!=='__files').sort()){
+        el.appendChild(renderOrgNode(node[k],k,depth));
+      }
+    }
+    return el;
+  }
+
+  function countFilesInNode(node){
+    let c=(node.__files||[]).length;
+    for(const k of Object.keys(node)) if(k!=='__files') c+=countFilesInNode(node[k]);
+    return c;
+  }
+
+  const tree=document.getElementById('fileTree');
+  tree.innerHTML='';
+  tree.appendChild(renderOrgNode(organTree,null,0));
+
+  // Switch to After tab automatically
+  document.querySelectorAll('.struct-tab').forEach((t,i)=>{
+    t.classList.toggle('active',i===1);
+  });
+  document.getElementById('panelBefore').classList.remove('active');
+  document.getElementById('panelAfter').classList.add('active');
+
   card.scrollIntoView({behavior:'smooth',block:'start'});
   setStep(5);
 }
 
 function toggleFolder(h){h.nextElementSibling.classList.toggle('open');h.querySelector('.folder-toggle').classList.toggle('open');}
-function expandAll(){document.querySelectorAll('.file-list').forEach(l=>l.classList.add('open'));document.querySelectorAll('.folder-toggle').forEach(t=>t.classList.add('open'));}
-function collapseAll(){document.querySelectorAll('.file-list').forEach(l=>l.classList.remove('open'));document.querySelectorAll('.folder-toggle').forEach(t=>t.classList.remove('open'));}
+function expandAll(){
+  document.querySelectorAll('#fileTree .tree-arrow').forEach(a=>{
+    a.classList.add('open');
+    const ch=a.closest('.tree-item').nextElementSibling;
+    if(ch){ch.style.maxHeight='none';ch.style.overflow='visible';}
+  });
+}
+function collapseAll(){
+  document.querySelectorAll('#fileTree .tree-arrow').forEach(a=>{
+    a.classList.remove('open');
+    const ch=a.closest('.tree-item').nextElementSibling;
+    if(ch){ch.style.maxHeight='0';ch.style.overflow='hidden';}
+  });
+}
 
 // ─── Download ZIP ───
 async function downloadZip(){
@@ -819,29 +1160,67 @@ async function downloadZip(){
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Building...';
   try{
     const zip=new JSZip();
-    const fileMap={};
-    for(const f of selectedFiles) fileMap[f.webkitRelativePath||f.name]=f;
 
-    let count=0;
+    // Build multiple lookup indexes for robust matching
+    const byFullPath={};   // "Folder/file.pdf" -> File
+    const byName={};       // "file.pdf" -> File (last wins, ok for unique names)
+    const byNameLower={};  // "file.pdf" lowercase -> File
+
+    for(const f of selectedFiles){
+      const fullKey = f.webkitRelativePath || f.name;
+      byFullPath[fullKey] = f;
+      byName[f.name] = f;
+      byNameLower[f.name.toLowerCase()] = f;
+    }
+
+    function findFile(origKey){
+      // Strategy 1: exact full path match
+      if(byFullPath[origKey]) return byFullPath[origKey];
+      // Strategy 2: just the filename part
+      const base = origKey.includes('/') ? origKey.split('/').pop() : origKey;
+      if(byName[base]) return byName[base];
+      // Strategy 3: case-insensitive filename
+      if(byNameLower[base.toLowerCase()]) return byNameLower[base.toLowerCase()];
+      // Strategy 4: fuzzy — original name without extension matches
+      const baseNoExt = base.replace(/\.[^.]+$/, '').toLowerCase();
+      const found = selectedFiles.find(f => f.name.replace(/\.[^.]+$/, '').toLowerCase() === baseNoExt);
+      return found || null;
+    }
+
+    let count=0, missing=0;
     for(const[orig,info]of Object.entries(organiseResult)){
-      let file=fileMap[orig];
-      if(!file){ const base=orig.split('/').pop(); file=Object.values(fileMap).find(f=>f.name===base); }
-      if(!file)continue;
-      const folder=(info.folder||'Unsorted').replace(/\\/g,'/');
-      const newName=sanitize(info.newName||file.name);
-      zip.file(`Organised/${folder}/${newName}`,await file.arrayBuffer());
+      const file = findFile(orig);
+      if(!file){ missing++; console.warn('Could not find file for key:', orig); continue; }
+
+      const folder = (info.folder||'Unsorted').replace(/\\/g,'/').trim();
+      const newName = (info.newName || file.name).trim();
+      const zipPath = `Organised/${folder}/${newName}`;
+
+      zip.file(zipPath, await file.arrayBuffer());
       count++;
     }
 
-    setStatus(`Packing ${count} files...`);
-    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}},m=>setProgress(m.percent));
+    if(count===0){
+      showToast('No files matched — please re-generate the preview first','error');
+      btn.disabled=false; btn.innerHTML='Download ZIP';
+      return;
+    }
+
+    setStatus(`Packing ${count} files${missing>0?` (${missing} not found)`:''}...`);
+    const blob=await zip.generateAsync(
+      {type:'blob',compression:'DEFLATE',compressionOptions:{level:6}},
+      m=>setProgress(m.percent)
+    );
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
     a.download='FolderMind Organised.zip';
     a.click(); URL.revokeObjectURL(a.href);
-    setStatus('Downloaded! Extract ZIP to apply.');
-    showToast('ZIP downloaded!','success');
-  }catch(err){showToast(`ZIP error: ${err.message}`,'error');}
+    setStatus(`Downloaded! ${count} files in ${Object.keys(Object.fromEntries(Object.entries(organiseResult).map(([k,v])=>[v.folder||'Unsorted',1]))).length} folders.`);
+    showToast(`ZIP ready — ${count} files organised!`,'success');
+  }catch(err){
+    showToast(`ZIP error: ${err.message}`,'error');
+    console.error(err);
+  }
   btn.disabled=false; btn.innerHTML='Download ZIP';
 }
 
@@ -873,7 +1252,37 @@ function toggleKeyVis(){const k=document.getElementById('apiKey');k.type=k.type=
 // ─── Misc ───
 function icon(n){
   const e=(n||'').split('.').pop().toLowerCase();
-  return{pdf:'📕',doc:'📝',docx:'📝',txt:'📄',md:'📄',jpg:'🖼',jpeg:'🖼',png:'🖼',gif:'🖼',svg:'🎨',webp:'🖼',mp4:'🎬',mov:'🎬',avi:'🎬',mkv:'🎬',mp3:'🎵',wav:'🎵',flac:'🎵',m4a:'🎵',zip:'📦',rar:'📦',tar:'📦',gz:'📦',xls:'📊',xlsx:'📊',csv:'📊',ppt:'📊',pptx:'📊',js:'💻',ts:'💻',py:'🐍',html:'🌐',css:'🎨',json:'⚙',exe:'⚙'}[e]||'📄';
+  const map={
+    // Documents
+    pdf:'📕',doc:'📝',docx:'📝',txt:'📄',md:'📄',rtf:'📄',odt:'📄',pages:'📄',
+    // Spreadsheets
+    xls:'📊',xlsx:'📊',csv:'📊',ods:'📊',numbers:'📊',
+    // Presentations
+    ppt:'📊',pptx:'📊',odp:'📊',key:'📊',
+    // Images
+    jpg:'🖼',jpeg:'🖼',png:'🖼',gif:'🖼',svg:'🎨',webp:'🖼',bmp:'🖼',tiff:'🖼',tif:'🖼',heic:'🖼',raw:'🖼',
+    // Video
+    mp4:'🎬',mov:'🎬',avi:'🎬',mkv:'🎬',wmv:'🎬',flv:'🎬',webm:'🎬',m4v:'🎬',
+    // Audio
+    mp3:'🎵',wav:'🎵',flac:'🎵',m4a:'🎵',aac:'🎵',ogg:'🎵',wma:'🎵',
+    // Archives
+    zip:'📦',rar:'📦',tar:'📦',gz:'📦','7z':'📦',bz2:'📦',xz:'📦',dmg:'📦',iso:'📦',
+    // Code
+    js:'💻',ts:'💻',jsx:'💻',tsx:'💻',py:'🐍',html:'🌐',css:'🎨',json:'⚙',xml:'⚙',
+    php:'💻',java:'💻',cpp:'💻',c:'💻',cs:'💻',go:'💻',rb:'💻',swift:'💻',kt:'💻',
+    sh:'💻',bat:'💻',ps1:'💻',
+    // Shortcuts & system
+    lnk:'🔗',url:'🔗',webloc:'🔗',desktop:'🔗',
+    ico:'🖼',icns:'🖼',
+    exe:'⚙',msi:'⚙',app:'⚙',deb:'⚙',rpm:'⚙',
+    // Fonts
+    ttf:'🔤',otf:'🔤',woff:'🔤',woff2:'🔤',
+    // Data
+    sql:'🗄',db:'🗄',sqlite:'🗄',
+    // Design
+    psd:'🎨',ai:'🎨',xd:'🎨',sketch:'🎨',fig:'🎨',figma:'🎨',
+  };
+  return map[e]||'📄';
 }
 function setStatus(m){document.getElementById('statusText').textContent=m;}
 function setProgress(p){document.getElementById('progressBar').style.width=p+'%';}
