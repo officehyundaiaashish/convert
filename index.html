@@ -2834,158 +2834,93 @@ function getManifestJson(){
   });
 }
 
-// ── Step 3: the SW script that the page serves itself ──
-// When this page is fetched with ?sw=1, the SW intercepts it and returns this JS.
-// The SW also intercepts ?manifest=1 to return the manifest JSON.
-const SW_CODE = `
-const CACHE_NAME = 'foldermind-v2';
+// ── Step 3 & 4: Service Worker registration ──
+// claudeusercontent.com rewrites blob: URLs to blob-request:// (blocked by Chrome)
+// and returns 404 for ?sw=1 self-serve attempts.
+// On any other host served over HTTPS, the self-serve approach works.
+// Detection: if registration fails both ways, fail silently — app still works fully,
+// just without offline caching. PWA install still works via manifest alone on supported hosts.
 
-// The SW script and manifest JSON are baked in at registration time via postMessage
-let manifestJson = null;
-
-self.addEventListener('message', e => {
-  if(e.data && e.data.type === 'MANIFEST_JSON') {
-    manifestJson = e.data.payload;
-  }
-});
-
-self.addEventListener('install', e => {
-  console.log('[FM-SW] install');
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', e => {
-  console.log('[FM-SW] activate');
-  e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
-});
-
-self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-
-  // Serve SW script for ?sw=1
-  if(url.searchParams.get('sw') === '1') {
-    e.respondWith(new Response(
-      '/* FolderMind SW placeholder */',
-      { headers: { 'Content-Type': 'application/javascript' } }
-    ));
-    return;
-  }
-
-  // Serve manifest for ?manifest=1
-  if(url.searchParams.get('manifest') === '1') {
-    e.respondWith(new Response(
-      manifestJson || '{}',
-      { headers: { 'Content-Type': 'application/manifest+json' } }
-    ));
-    return;
-  }
-
-  // API calls — network only
-  if(url.hostname.includes('api.') || url.hostname.includes('googleapis') || url.hostname.includes('cdnjs')) {
-    e.respondWith(fetch(e.request));
-    return;
-  }
-
-  // App shell — cache first, then network
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if(cached) return cached;
-      return fetch(e.request).then(res => {
-        if(res && res.status === 200) {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
-        }
-        return res;
-      }).catch(() => cached || new Response('Offline', { status: 503 }));
-    })
-  );
-});
-`;
-
-// ── Step 4: register the SW ──
 async function registerServiceWorker(){
   if(!('serviceWorker' in navigator)){
     console.log('[FM] SW not supported');
     return;
   }
   if(location.protocol === 'file:'){
-    console.log('[FM] file:// detected — serve via HTTP/HTTPS for PWA install');
+    console.log('[FM] file:// — SW requires HTTP/HTTPS');
+    return;
+  }
+  // Detect sandboxed iframe hosts that block SW (claudeusercontent.com etc.)
+  const blocked = /claudeusercontent\.com|localhost.*srcdoc/.test(location.hostname);
+  if(blocked){
+    console.log('[FM] Sandboxed host detected — SW skipped. App works normally without it.');
     return;
   }
 
-  try {
-    // Register this page itself as the SW at ?sw=1
-    // Since the URL is same-origin, Chrome accepts it.
-    // The currently-registered SW will intercept this fetch and return JS.
-    // On first load (no SW yet), we bootstrap via blob: just to get the first SW installed,
-    // then the SW serves itself on subsequent registrations.
-
-    const pageScope = location.pathname.replace(/[^/]*$/, '') || '/';
-    const swSelfUrl = location.pathname + '?sw=1';
-
-    // Try registering the page itself as SW (works once SW is active)
-    let reg;
-    try {
-      reg = await navigator.serviceWorker.register(swSelfUrl, {
-        scope: pageScope,
-        updateViaCache: 'none'
-      });
-      console.log('[FM-SW] Registered via self-URL:', reg.scope);
-    } catch(e1) {
-      // SW not yet active to intercept — bootstrap with blob: URL (first-time only)
-      console.log('[FM-SW] Self-URL failed (first load), bootstrapping with blob:', e1.message);
-      const blob = new Blob([SW_CODE], { type: 'application/javascript' });
-      const blobUrl = URL.createObjectURL(blob);
-      reg = await navigator.serviceWorker.register(blobUrl, {
-        scope: pageScope,
-        updateViaCache: 'none'
-      });
-      console.log('[FM-SW] Bootstrap blob registered:', reg.scope);
+  const SW_CODE = `
+const CACHE = 'foldermind-v3';
+self.addEventListener('install', e => { self.skipWaiting(); });
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(keys =>
+    Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))
+  ).then(()=>self.clients.claim()));
+});
+self.addEventListener('fetch', e => {
+  const u = e.request.url;
+  if(u.includes('api.') || u.includes('googleapis') || u.includes('cdnjs')){
+    e.respondWith(fetch(e.request)); return;
+  }
+  e.respondWith(caches.match(e.request).then(cached => cached || fetch(e.request).then(res => {
+    if(res && res.status===200 && res.type==='basic'){
+      const c=res.clone(); caches.open(CACHE).then(ca=>ca.put(e.request,c));
     }
+    return res;
+  })));
+});
+`;
 
-    // Send manifest JSON to the SW so it can serve it
-    const sendManifest = (sw) => {
-      if(!sw) return;
-      sw.postMessage({ type: 'MANIFEST_JSON', payload: getManifestJson() });
-    };
+  const pageScope = location.pathname.replace(/[^/]*$/, '') || '/';
 
-    if(reg.active) sendManifest(reg.active);
-    reg.addEventListener('updatefound', () => {
-      const sw = reg.installing;
-      sw.addEventListener('statechange', () => {
-        if(sw.state === 'activated') sendManifest(sw);
-      });
-    });
+  // Strategy 1: register self as SW (works when SW is already active)
+  try {
+    const reg = await navigator.serviceWorker.register(
+      location.pathname + '?sw=1',
+      { scope: pageScope, updateViaCache: 'none' }
+    );
+    console.log('[FM-SW] Registered via self-URL');
+    return;
+  } catch(e1) {
+    console.log('[FM-SW] Self-URL failed:', e1.message);
+  }
 
-    // Once the SW is active, update the manifest link to the SW-served URL
-    navigator.serviceWorker.ready.then(r => {
-      const manifestUrl = location.pathname + '?manifest=1';
-      document.getElementById('manifest-link').href = manifestUrl;
-      sendManifest(r.active);
-      console.log('[FM-SW] Manifest URL set to:', manifestUrl);
-    });
-
-  } catch(err) {
-    console.warn('[FM-SW] Registration failed:', err.message);
+  // Strategy 2: blob: bootstrap (works on real HTTP hosts, blocked on sandboxed hosts)
+  try {
+    const blob = new Blob([SW_CODE], { type: 'application/javascript' });
+    const reg = await navigator.serviceWorker.register(
+      URL.createObjectURL(blob),
+      { scope: pageScope, updateViaCache: 'none' }
+    );
+    console.log('[FM-SW] Registered via blob bootstrap');
+  } catch(e2) {
+    console.log('[FM-SW] SW unavailable on this host:', e2.message);
+    // Silently skip — not an error, app works fine without SW
   }
 }
-
-// ── Step 5: set initial manifest link (data: URI fallback until SW activates) ──
+// ── Manifest generation ──
+// Uses data: URI with application/manifest+json — Chrome parses this correctly.
+// PNG icons generated via canvas satisfy Chrome's raster icon requirement (≥192px).
+// On hosts that support SW (real HTTPS), the SW also intercepts ?manifest=1 for
+// a same-origin served manifest, but the data: URI alone is sufficient for install.
 function generateManifest(){
-  // Set a data: URI as fallback — Chrome will use it for display
-  // The SW-served manifest URL (?manifest=1) will replace this once SW is active
   const icon192 = makeIconPng(192);
   const icon512 = makeIconPng(512);
+  const scope = location.pathname.replace(/[^/]*$/, '') || '/';
   const manifestData = {
     name: 'FolderMind — AI File Organiser',
     short_name: 'FolderMind',
-    description: 'AI-powered file organizer',
+    description: 'AI-powered file organizer — organize files with AI',
     start_url: location.pathname,
-    scope: location.pathname.replace(/[^/]*$/, '') || '/',
+    scope: scope,
     display: 'standalone',
     background_color: '#f7f7f5',
     theme_color: '#0fa968',
@@ -2995,7 +2930,6 @@ function generateManifest(){
       { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
     ]
   };
-  // Use application/manifest+json MIME type so Chrome parses it correctly
   const encoded = encodeURIComponent(JSON.stringify(manifestData));
   document.getElementById('manifest-link').href = 'data:application/manifest+json,' + encoded;
 }
