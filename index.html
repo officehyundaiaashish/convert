@@ -323,6 +323,23 @@ select{display:none !important;}
 @keyframes modalBgIn{from{opacity:0}to{opacity:1}}
 @keyframes modalIn{from{opacity:0;transform:scale(0.94) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}
 
+/* Custom confirm dialog */
+.confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;animation:modalBgIn 0.15s ease both;}
+[data-theme="dark"] .confirm-overlay{background:rgba(0,0,0,0.7);}
+.confirm-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;width:100%;max-width:320px;box-shadow:0 16px 48px rgba(0,0,0,0.15);animation:modalIn 0.18s cubic-bezier(0.16,1,0.3,1) both;overflow:hidden;}
+[data-theme="dark"] .confirm-box{box-shadow:0 16px 48px rgba(0,0,0,0.6);}
+.confirm-body{padding:20px 18px 14px;}
+.confirm-icon{font-size:28px;margin-bottom:10px;display:block;text-align:center;}
+.confirm-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px;text-align:center;}
+.confirm-msg{font-size:12px;color:var(--muted);text-align:center;line-height:1.5;}
+.confirm-actions{display:flex;gap:0;border-top:1px solid var(--border);}
+.confirm-btn{flex:1;padding:12px;background:none;border:none;cursor:pointer;font-size:13px;font-weight:500;font-family:inherit;transition:background 0.12s;color:var(--text);}
+.confirm-btn:first-child{border-right:1px solid var(--border);color:var(--muted);}
+.confirm-btn:first-child:hover{background:var(--surface2);}
+.confirm-btn.danger{color:#c0392b;font-weight:600;}
+[data-theme="dark"] .confirm-btn.danger{color:#e06060;}
+.confirm-btn.danger:hover{background:rgba(192,57,43,0.08);}
+
 /* Inline SVG icons */
 .ic{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
 .ic svg{display:block;width:16px;height:16px;}
@@ -422,7 +439,7 @@ select{display:none !important;}
           <select id="modelSelect" style="display:none !important"></select>
         </div>
         <div>
-          <label>Name Style</label>
+          <label>Style Hint</label>
           <div class="cd" id="cd-case">
             <div class="cd-trigger" tabindex="0">
               <span class="cd-value" id="cd-case-val">Title Case</span>
@@ -603,9 +620,49 @@ select{display:none !important;}
 </div>
 <div class="toast" id="toast"></div>
 
+<!-- Custom confirm dialog -->
+<div id="confirmOverlay" class="confirm-overlay" style="display:none;" onclick="confirmCancel(event)">
+  <div class="confirm-box">
+    <div class="confirm-body">
+      <span class="confirm-icon" id="confirmIcon">⚠️</span>
+      <div class="confirm-title" id="confirmTitle">Are you sure?</div>
+      <div class="confirm-msg" id="confirmMsg"></div>
+    </div>
+    <div class="confirm-actions">
+      <button class="confirm-btn" onclick="confirmResolve(false)">Cancel</button>
+      <button class="confirm-btn danger" id="confirmOkBtn" onclick="confirmResolve(true)">Delete</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── SVG icon helper ──
 function svg(id,cls=''){return`<span class="ic ${cls}"><svg><use href="#ic-${id}"/></svg></span>`;}
+
+// ── Custom confirm dialog ──
+let _confirmResolve=null;
+function showConfirm({title='Are you sure?',msg='',okLabel='Confirm',icon='',danger=true}={}){
+  return new Promise(resolve=>{
+    _confirmResolve=resolve;
+    document.getElementById('confirmTitle').textContent=title;
+    document.getElementById('confirmMsg').textContent=msg;
+    document.getElementById('confirmIcon').textContent=icon||'';
+    document.getElementById('confirmIcon').style.display=icon?'block':'none';
+    const okBtn=document.getElementById('confirmOkBtn');
+    okBtn.textContent=okLabel;
+    okBtn.className='confirm-btn'+(danger?' danger':'');
+    const overlay=document.getElementById('confirmOverlay');
+    overlay.style.display='flex';
+    requestAnimationFrame(()=>overlay.style.animation='modalBgIn 0.15s ease both');
+  });
+}
+function confirmResolve(val){
+  document.getElementById('confirmOverlay').style.display='none';
+  if(_confirmResolve){_confirmResolve(val);_confirmResolve=null;}
+}
+function confirmCancel(e){
+  if(e.target===document.getElementById('confirmOverlay')) confirmResolve(false);
+}
 
 let selectedFiles = [];
 let organiseResult = {};
@@ -786,14 +843,22 @@ function setActiveAgent(id){
   initModelsDropdown();
 }
 
-function deleteAgent(e, id){
+async function deleteAgent(e, id){
   e.stopPropagation();
-  let agents = loadAgents();
+  const agents = loadAgents();
   const a = agents.find(x=>x.id===id);
-  agents = agents.filter(x=>x.id!==id);
-  saveAgents(agents);
+  const ok = await showConfirm({
+    title:'Remove agent?',
+    msg:`"${a?.nickname||'This agent'}" will be removed.`,
+    okLabel:'Remove',
+    icon:'',
+    danger:true
+  });
+  if(!ok) return;
+  const updated = agents.filter(x=>x.id!==id);
+  saveAgents(updated);
   if(activeAgentId===id){
-    activeAgentId = agents.length ? agents[0].id : null;
+    activeAgentId = updated.length ? updated[0].id : null;
     localStorage.setItem('fm_activeagent', activeAgentId||'');
     if(activeAgentId) setActiveAgent(activeAgentId);
     else {
@@ -1033,12 +1098,12 @@ const CD_DEFS = {
     syncId: 'caseStyle',
     searchable: false,
     options: [
-      {value:'natural',  label:'Title Case',    icon:'Aa'},
-      {value:'sentence', label:'Sentence case', icon:'Aa'},
-      {value:'lower',    label:'all lowercase', icon:'aa'},
-      {value:'upper',    label:'ALL UPPERCASE', icon:'AA'},
-      {value:'original', label:'Keep Original', icon:'—'},
-      {value:'custom',   label:'Custom format…',icon:'✏️'},
+      {value:'natural',  label:'Title Case (hint)',    icon:'Aa'},
+      {value:'sentence', label:'Sentence case (hint)', icon:'Aa'},
+      {value:'lower',    label:'all lowercase (hint)',     icon:'aa'},
+      {value:'upper',    label:'ALL UPPERCASE (hint)',     icon:'AA'},
+      {value:'original', label:'Keep Original',         icon:'—'},
+      {value:'custom',   label:'Custom format…',        icon:'✏️'},
     ],
     onChange: (val) => {
       document.getElementById('customFormatWrap').classList.toggle('hidden', val!=='custom');
@@ -1180,7 +1245,7 @@ document.addEventListener('keydown', e=>{
 // Init provider dropdown on load
 function initCaseDropdown(){
   cdBuild('cd-case');
-  cdSelect('cd-case','natural','Title Case');
+  cdSelect('cd-case','natural','Title Case (hint)');
 }
 
 // ═══════════════════════════════
@@ -1344,11 +1409,11 @@ function buildSystem(){
   const customFmt = s==='custom' ? document.getElementById('customFormat').value.trim() : '';
 
   const caseInstr = {
-    natural:  '',  // AI decides — trust AI naming completely
-    original: '',  // AI decides
-    sentence: 'Use Sentence case for file and folder names.',
-    lower:    'Use all lowercase for file and folder names.',
-    upper:    'USE ALL UPPERCASE for file and folder names.',
+    natural:  'Prefer Title Case as a starting point, but use your judgment — keep codes/IDs/VINs uppercase as-is.',
+    original: 'Prefer keeping original casing as a starting point.',
+    sentence: 'Prefer Sentence case as a starting point.',
+    lower:    'Prefer lowercase as a starting point.',
+    upper:    'Prefer UPPERCASE as a starting point.',
     custom:   customFmt || '',
   }[s] || '';
 
@@ -1356,18 +1421,24 @@ function buildSystem(){
 
   return `You are a file organisation assistant. Your job is to read the USER INSTRUCTION below and follow it EXACTLY.
 
-CRITICAL — READ THIS FIRST:
-The user may give very specific instructions like:
-  - "files with VIN numbers go in Vehicle Docs folder"
-  - "registration number files go in Registration folder"
-  - "invoices go in Finance/Invoices"
-  - "anything with date 2024 goes in Archive/2024"
-You MUST follow these specific instructions literally and precisely. Look carefully at each filename for the patterns the user describes. If a filename contains what the user mentioned (a VIN, a registration number, an invoice number, a date, a keyword), put it in EXACTLY the folder the user asked for.
+══ USER INSTRUCTION IS THE ONLY THING THAT MATTERS ══
+Read the user instruction below and execute it precisely. Your job is to be a smart assistant that interprets what the user wants — not to follow generic rules.
 
-USER INSTRUCTION HAS THE HIGHEST PRIORITY. Generic rules below are only fallbacks for files the user instruction does not cover.
+Examples of what users may say:
+  - "files with VIN numbers → Vehicle Docs folder"
+  - "registration plates → Registration"
+  - "invoices → Finance/Invoices"
+  - "2024 files → Archive/2024"
+  - "group by event name" / "sort by date" / "keep flat"
+
+Scan every filename carefully for the patterns the user mentions. If a filename matches what the user described, place it EXACTLY where the user asked — no exceptions.
+
+Use your own intelligence to infer intent. Be creative with naming — make names human-readable and meaningful. Preserve codes, IDs, VINs, plates exactly as-is.
+
+The fallback rules below only apply to files the user instruction does not explicitly cover.
 
 ─── FALLBACK RULES (only when user gives no specific instruction for a file) ───
-${caseInstr ? `Naming: ${caseInstr}` : 'Use clean, well-formatted names — keep uppercase codes/IDs/VINs as-is.'}
+${caseInstr ? `Style hint (low priority — override if user instruction or context says otherwise): ${caseInstr}` : 'Use clean, well-formatted names — keep uppercase codes/IDs/VINs as-is.'}
 - Icons (.ico .icns) → "Icons" folder — NOT Documents
 - Shortcuts (.lnk .url) → group with what they point to
 - Executables (.exe .msi .dmg) → "Software" folder
@@ -1500,7 +1571,7 @@ function postProcess(results){
     // Only override AI's naming when user explicitly picked a transform
     // natural/original = trust AI completely
     const s=document.getElementById('caseStyle').value;
-    if(s==='lower'||s==='upper'||s==='sentence') newName=applyCase(newName);
+    // Style is a hint — AI handles casing, no force override
     info.newName=newName;
     info.folder=applyFolderCase(info.folder||'Other');
   }
@@ -1569,7 +1640,7 @@ async function organiseFiles(){
 
     const userMsg=[
       userInstr
-        ? `=== USER INSTRUCTION (follow EXACTLY, highest priority) ===\n${userInstr}\n=== END ===`
+        ? `═══ USER INSTRUCTION — execute this precisely ═══\n${userInstr}\n═══ END ═══`
         : 'Organise these files into logical folders with clean names.',
       `File types: ${typeHint}`,
       `\nIMPORTANT: Use the exact filename (without the date in brackets) as the JSON key.`,
