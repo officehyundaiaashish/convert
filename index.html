@@ -585,6 +585,7 @@ select{display:none !important;}
       <button class="btn btn-primary" id="organiseBtn" onclick="organiseFiles()" disabled>
         Generate Preview
       </button>
+      <button class="btn btn-secondary hidden" id="debugLogBtn" onclick="generateDebugLog()" title="Download what gets sent to AI">🪲 Debug Log</button>
       <button class="btn btn-secondary" onclick="clearAll()"><span class="ic ic-sm"><svg><use href="#ic-x"/></svg></span> Clear All</button>
       <span id="fileStatusInline" style="font-size:11px;color:var(--muted);flex:1;">No files selected</span>
     </div>
@@ -693,6 +694,7 @@ function setMode(mode){
   document.getElementById('modeNormal').classList.toggle('active', mode==='normal');
   document.getElementById('modeExp').classList.toggle('active', mode==='experimental');
   document.getElementById('expInfo').classList.toggle('show', mode==='experimental');
+  document.getElementById('debugLogBtn').classList.toggle('hidden', mode!=='experimental');
 }
 
 // ─── Theme ───
@@ -1536,24 +1538,18 @@ async function callGemini(key, model, messages, maxTokens){
     return {role, parts};
   });
 
-  const hasVision=contents.some(c=>c.parts&&c.parts.some(p=>p.inlineData));
-  const isThinking=model.includes('2.5');
-  const body={contents, generationConfig:{maxOutputTokens:maxTokens, temperature:0.15,
-    ...(!hasVision?{responseMimeType:'application/json'}:{}),
-    ...(isThinking?{thinkingConfig:{thinkingBudget:0}}:{})
-  }};
-  const sysText=typeof sys?.content==='string'?sys.content:sys?JSON.stringify(sys.content):'';
-  const sysContent=hasVision
-    ?sysText+'\n\nCRITICAL: Respond with ONLY a raw JSON object. No markdown, no explanation. Start with { end with }.'
-    :sysText;
-  if(sys) body.systemInstruction={parts:[{text:sysContent}]};
+  // Force JSON output — prevents Gemini from adding description text around JSON
+  const hasVision=msgs.some(m=>Array.isArray(m.content)&&m.content.some(p=>p.type==='image_url'));
+  const body={contents, generationConfig:{maxOutputTokens:maxTokens, temperature:0.15, ...(hasVision?{responseMimeType:'application/json'}:{})}};
+  if(sys) body.systemInstruction={parts:[{text: typeof sys.content==='string'?sys.content:JSON.stringify(sys.content)}]};
   try{
     const url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
     const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await res.json();
     if(!res.ok) throw new Error(data.error?.message||`Gemini ${res.status}`);
-    const parts=(data.candidates?.[0]?.content?.parts||[]).filter(p=>!p.thought);
-    const text=parts.map(p=>p.text||'').join('');
+    // Gemini can return multiple parts — join text parts
+    const parts = data.candidates?.[0]?.content?.parts||[];
+    const text = parts.map(p=>p.text||'').join('');
     const parsed=extractJSON(text);
     if(!parsed) throw new Error('Gemini returned unparseable JSON — try another model');
     return parsed;
@@ -1604,7 +1600,7 @@ function readImageMeta(file){
         const modelM=str.match(/(?:iPhone|Samsung|Pixel|Canon|Nikon|Sony|Xiaomi|OnePlus|Huawei)[^\x00]{0,20}/i);
         const parts=[];
         if(dateM) parts.push(`Date:${dateM[0].slice(0,10).replace(/:/g,'-')}`);
-        if(modelM) parts.push(`Cam:${modelM[0].trim().slice(0,60)}`);
+        if(modelM) parts.push(`Cam:${modelM[0].trim().slice(0,30)}`);
         resolve(parts.join(' ')||null);
       }catch{resolve(null);}
     };
@@ -1614,49 +1610,37 @@ function readImageMeta(file){
 }
 
 // Extract first N chars from text-based files
-function readTextContent(file, maxChars=500){
+function readTextContent(file, maxChars=200){
   return new Promise(resolve=>{
     const reader=new FileReader();
     reader.onload=e=>{
-      // Collapse whitespace but preserve meaningful line breaks as spaces
-      const text=(e.target.result||'').replace(/[\r\n\t]+/g,' ').replace(/ {2,}/g,' ').trim().slice(0,maxChars);
+      const text=(e.target.result||'').replace(/\s+/g,' ').trim().slice(0,maxChars);
       resolve(text||null);
     };
     reader.onerror=()=>resolve(null);
-    reader.readAsText(file.slice(0,32768)); // 32KB — enough for header + content
+    reader.readAsText(file.slice(0,4096));
   });
 }
 
-// Extract PDF text — reads raw bytes, finds text streams and metadata
+// Extract PDF text (first 200 words) — reads raw bytes, finds text streams
 function readPdfText(file){
   return new Promise(resolve=>{
     const reader=new FileReader();
     reader.onload=e=>{
       try{
         const text=e.target.result||'';
-        const parts=[];
-        // Try to extract /Title from PDF metadata
-        const titleM=text.match(/\/Title\s*\(([^\)]{2,120})\)/);
-        if(titleM) parts.push('Title:'+titleM[1].replace(/[^\x20-\x7E]/g,'').trim());
-        // Try /Author
-        const authorM=text.match(/\/Author\s*\(([^\)]{2,80})\)/);
-        if(authorM) parts.push('Author:'+authorM[1].replace(/[^\x20-\x7E]/g,'').trim());
-        // Try /Subject
-        const subjectM=text.match(/\/Subject\s*\(([^\)]{2,80})\)/);
-        if(subjectM) parts.push('Subject:'+subjectM[1].replace(/[^\x20-\x7E]/g,'').trim());
-        // Extract readable strings from PDF content stream
-        const matches=text.match(/\(([^\)]{3,120})\)/g)||[];
+        // Extract readable strings from PDF stream
+        const matches=text.match(/\(([^\)]{3,80})\)/g)||[];
         const words=matches
           .map(m=>m.slice(1,-1).replace(/[^\x20-\x7E]/g,'').trim())
-          .filter(w=>w.length>3&&/[a-zA-Z]{2,}/.test(w)&&!/^\.+$/.test(w))
-          .slice(0,120)
+          .filter(w=>w.length>2&&/[a-zA-Z]/.test(w))
+          .slice(0,40)
           .join(' ');
-        if(words) parts.push('Content:'+words.slice(0,600));
-        resolve(parts.join(' | ')||null);
+        resolve(words.slice(0,300)||null);
       }catch{resolve(null);}
     };
     reader.onerror=()=>resolve(null);
-    reader.readAsBinaryString(file.slice(0,131072)); // 128KB
+    reader.readAsBinaryString(file.slice(0,65536));
   });
 }
 
@@ -1695,7 +1679,7 @@ function readAudioMeta(file){
       }catch{resolve(null);}
     };
     reader.onerror=()=>resolve(null);
-    reader.readAsArrayBuffer(file.slice(0,131072)); // 128KB — ID3v2 tags can be large
+    reader.readAsArrayBuffer(file.slice(0,8192));
   });
 }
 
@@ -1724,254 +1708,60 @@ function readZipList(file){
   return new Promise(async resolve=>{
     try{
       const zip=await JSZip.loadAsync(file);
-      const names=Object.keys(zip.files).filter(n=>!zip.files[n].dir).slice(0,40);
+      const names=Object.keys(zip.files).filter(n=>!zip.files[n].dir).slice(0,20);
       resolve(names.map(n=>n.split('/').pop()).join(', ')||null);
     }catch{resolve(null);}
   });
 }
 
-// Master extractor — covers ALL FILE_TYPES categories with rich content extraction
+// Master extractor — decides what to extract per file type
 async function extractFileContext(file, useVision=false){
   const cat=getFileCategory(file.name);
   const ext=file.name.split('.').pop().toLowerCase();
   const parts=[];
-  const sizeMB=(file.size/1048576).toFixed(1);
-  const sizeKB=(file.size/1024).toFixed(0);
-  const sizeStr=file.size>=1048576?`${sizeMB}MB`:`${sizeKB}KB`;
 
   try{
-    // ── IMAGE ──────────────────────────────────────────────────────────────────
     if(cat==='image'){
-      parts.push(`Size:${sizeStr}`);
-      if(ext==='svg'){
-        const text=await readTextContent(file,400);
-        if(text) parts.push(`SVG:${text}`);
-      } else {
-        const meta=await readImageMeta(file);
-        if(meta) parts.push(meta);
-      }
-      if(useVision && !['svg','psd','ai','xcf'].includes(ext)){
-        const thumb=await imgToThumbnail(file,200);
-        if(thumb) parts.push(`__VISION__${thumb}`);
+      const meta=await readImageMeta(file);
+      if(meta) parts.push(meta);
+      if(useVision){
+        const thumb=await imgToThumbnail(file,80);
+        if(thumb) parts.push(`__VISION__${thumb}`); // marker for callAI
       }
     }
-    // ── AUDIO ──────────────────────────────────────────────────────────────────
     else if(cat==='audio'){
-      parts.push(`Size:${sizeStr}`);
       const meta=await readAudioMeta(file);
       if(meta) parts.push(meta);
-      else {
-        // Non-MP3: try reading header as text for any embedded title/artist
-        const text=await readTextContent(file,120);
-        if(text && /[a-zA-Z]{3,}/.test(text)) parts.push(`Header:${text.slice(0,80)}`);
-      }
     }
-    // ── VIDEO ──────────────────────────────────────────────────────────────────
     else if(cat==='video'){
-      parts.push(`Size:${sizeStr}`);
       const dur=await readVideoDuration(file);
       if(dur) parts.push(`Duration:${dur}`);
+      const mb=(file.size/1048576).toFixed(1);
+      parts.push(`Size:${mb}MB`);
     }
-    // ── DOCUMENT ───────────────────────────────────────────────────────────────
-    else if(cat==='document'){
-      if(ext==='pdf'){
-        const text=await readPdfText(file);
-        if(text) parts.push(text); // already formatted with Title/Author/Content labels
-        else parts.push(`Size:${sizeStr}`);
-      } else if(['txt','md','log','rtf'].includes(ext)){
-        const text=await readTextContent(file,600);
-        if(text) parts.push(`Content:${text}`);
-      } else if(['doc','docx'].includes(ext)){
-        const snippet=await readDocxText(file);
-        if(snippet) parts.push(`Content:${snippet}`);
-        else parts.push(`Size:${sizeStr}`);
-      } else if(ext==='epub'||ext==='mobi'){
-        const info=await readEpubTitle(file);
-        if(info) parts.push(info);
-        else parts.push(`Size:${sizeStr}`);
-      } else if(ext==='odt'||ext==='pages'){
-        const snippet=await readOdtText(file);
-        if(snippet) parts.push(`Content:${snippet}`);
-        else parts.push(`Size:${sizeStr}`);
-      } else {
-        parts.push(`Size:${sizeStr}`);
-      }
+    else if(ext==='pdf'){
+      const text=await readPdfText(file);
+      if(text) parts.push(`Content:${text.slice(0,200)}`);
     }
-    // ── SPREADSHEET ────────────────────────────────────────────────────────────
-    else if(cat==='spreadsheet'){
-      if(ext==='csv'||ext==='tsv'){
-        const text=await readTextContent(file,500);
-        if(text) parts.push(`Data:${text}`);
-      } else {
-        const meta=await readSpreadsheetMeta(file);
-        if(meta) parts.push(meta);
-        else parts.push(`Size:${sizeStr}`);
-      }
+    else if(['txt','md','csv','log','xml','html','htm'].includes(ext)){
+      const text=await readTextContent(file,150);
+      if(text) parts.push(`Content:${text}`);
     }
-    // ── PRESENTATION ───────────────────────────────────────────────────────────
-    else if(cat==='presentation'){
-      if(ext==='pptx'||ext==='odp'){
-        const title=await readPptxTitle(file);
-        if(title) parts.push(`Slides:${title}`);
-        else parts.push(`Size:${sizeStr}`);
-      } else {
-        parts.push(`Size:${sizeStr}`);
-      }
-    }
-    // ── CODE ───────────────────────────────────────────────────────────────────
-    else if(cat==='code'){
-      const text=await readTextContent(file,500);
+    else if(['js','ts','py','java','cpp','c','go','rb','swift','kt','rs','php'].includes(ext)){
+      const text=await readTextContent(file,120);
       if(text) parts.push(`Code:${text}`);
-      else parts.push(`Size:${sizeStr}`);
     }
-    // ── DATA / CONFIG ──────────────────────────────────────────────────────────
-    else if(cat==='data'){
-      if(['json','yaml','yml','toml','env','ini','cfg','conf','xml'].includes(ext)){
-        const text=await readTextContent(file,500);
-        if(text) parts.push(`Data:${text}`);
-      } else if(ext==='sql'){
-        const text=await readTextContent(file,400);
-        if(text) parts.push(`SQL:${text}`);
-      } else if(['db','sqlite','sqlite3'].includes(ext)){
-        parts.push(`Size:${sizeStr} Type:SQLiteDB`);
-      } else {
-        parts.push(`Size:${sizeStr}`);
-      }
+    else if(['json','yaml','yml','toml','env'].includes(ext)){
+      const text=await readTextContent(file,100);
+      if(text) parts.push(`Data:${text}`);
     }
-    // ── ARCHIVE ────────────────────────────────────────────────────────────────
-    else if(cat==='archive'){
-      parts.push(`Size:${sizeStr}`);
-      if(['zip','rar','7z'].includes(ext)){
-        const list=await readZipList(file);
-        if(list) parts.push(`Contains:${list}`);
-      }
-    }
-    // ── FONT ───────────────────────────────────────────────────────────────────
-    else if(cat==='font'){
-      parts.push(`Size:${sizeStr} Type:Font`);
-    }
-    // ── ICON / SHORTCUT / EXECUTABLE ──────────────────────────────────────────
-    else if(cat==='icon'||cat==='shortcut'||cat==='executable'){
-      parts.push(`Size:${sizeStr}`);
-      if(ext==='url'||ext==='webloc'){
-        const text=await readTextContent(file,200);
-        if(text) parts.push(`Link:${text}`);
-      }
-    }
-    // ── OTHER / UNKNOWN ────────────────────────────────────────────────────────
-    else {
-      parts.push(`Size:${sizeStr}`);
-      if(file.size < 1048576){
-        const text=await readTextContent(file,200);
-        if(text && /[a-zA-Z]{4,}/.test(text)) parts.push(`Content:${text}`);
-      }
+    else if(['zip','rar','7z'].includes(ext)){
+      const list=await readZipList(file);
+      if(list) parts.push(`Contains:${list}`);
     }
   }catch(e){}
 
   return parts.length ? parts.join(' | ') : null;
-}
-
-// ── readDocxText: unpack docx zip → word/document.xml → plain text ──
-async function readDocxText(file){
-  try{
-    const zip=await JSZip.loadAsync(file);
-    const xmlFile=zip.files['word/document.xml'];
-    if(!xmlFile) return null;
-    const xml=await xmlFile.async('string');
-    const text=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
-    const words=text.split(' ').filter(w=>w.length>1&&/[a-zA-Z0-9]/.test(w)).slice(0,150).join(' ');
-    return words.slice(0,600)||null;
-  }catch{return null;}
-}
-
-// ── readOdtText: unpack odt → content.xml → plain text ──
-async function readOdtText(file){
-  try{
-    const zip=await JSZip.loadAsync(file);
-    const xmlFile=zip.files['content.xml'];
-    if(!xmlFile) return null;
-    const xml=await xmlFile.async('string');
-    const text=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
-    const words=text.split(' ').filter(w=>w.length>1&&/[a-zA-Z0-9]/.test(w)).slice(0,150).join(' ');
-    return words.slice(0,600)||null;
-  }catch{return null;}
-}
-
-// ── readEpubTitle: unpack epub → .opf → dc:title + dc:creator ──
-async function readEpubTitle(file){
-  try{
-    const zip=await JSZip.loadAsync(file);
-    const opfEntry=Object.keys(zip.files).find(n=>n.endsWith('.opf'));
-    if(!opfEntry) return null;
-    const xml=await zip.files[opfEntry].async('string');
-    const parts=[];
-    const titleM=xml.match(/<dc:title[^>]*>([^<]+)<\/dc:title>/i);
-    const authorM=xml.match(/<dc:creator[^>]*>([^<]+)<\/dc:creator>/i);
-    const subjectM=xml.match(/<dc:subject[^>]*>([^<]+)<\/dc:subject>/i);
-    const descM=xml.match(/<dc:description[^>]*>([^<]{0,200})<\/dc:description>/i);
-    if(titleM) parts.push(`Title:${titleM[1].trim().slice(0,80)}`);
-    if(authorM) parts.push(`Author:${authorM[1].trim().slice(0,50)}`);
-    if(subjectM) parts.push(`Subject:${subjectM[1].trim().slice(0,60)}`);
-    if(descM) parts.push(`Desc:${descM[1].trim().slice(0,120)}`);
-    return parts.join(' | ')||null;
-  }catch{return null;}
-}
-
-// ── readPptxTitle: unpack pptx → slide1.xml + slide2.xml → text ──
-async function readPptxTitle(file){
-  try{
-    const zip=await JSZip.loadAsync(file);
-    const slideKeys=Object.keys(zip.files).filter(n=>/ppt\/slides\/slide\d+\.xml/.test(n)).sort().slice(0,3);
-    const parts=[];
-    for(const key of slideKeys){
-      const xml=await zip.files[key].async('string');
-      const text=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
-      const words=text.split(' ').filter(w=>w.length>1&&/[a-zA-Z0-9]/.test(w)).slice(0,40).join(' ');
-      if(words) parts.push(words.slice(0,150));
-    }
-    // Also get slide count
-    const totalSlides=Object.keys(zip.files).filter(n=>/ppt\/slides\/slide\d+\.xml/.test(n)).length;
-    const result=parts.join(' | ');
-    return (result?result+` [${totalSlides} slides]`:`${totalSlides} slides`)||null;
-  }catch{return null;}
-}
-
-// ── readSpreadsheetMeta: xlsx → sheet names + first row data ──
-async function readSpreadsheetMeta(file){
-  try{
-    const zip=await JSZip.loadAsync(file);
-    const parts=[];
-    const wbFile=zip.files['xl/workbook.xml']||zip.files['content.xml'];
-    if(wbFile){
-      const xml=await wbFile.async('string');
-      // Extract sheet names from <sheet name="..." />
-      const sheetNames=[...xml.matchAll(/name="([^"]{1,50})"/g)]
-        .map(m=>m[1]).filter(n=>!/^(Sheet|sheet)/.test(n)||n.length>6).slice(0,8);
-      if(sheetNames.length) parts.push(`Sheets:${sheetNames.join(', ')}`);
-    }
-    // First sheet data
-    const s1=zip.files['xl/worksheets/sheet1.xml'];
-    if(s1){
-      const sxml=await s1.async('string');
-      // Shared strings (for text cells in xlsx)
-      const ssFile=zip.files['xl/sharedStrings.xml'];
-      let strings=[];
-      if(ssFile){
-        const ssxml=await ssFile.async('string');
-        strings=[...ssxml.matchAll(/<t[^>]*>([^<]+)<\/t>/g)].map(m=>m[1]).slice(0,60);
-      }
-      // Get first 20 string indices from sheet
-      const refs=[...sxml.matchAll(/t="s"[^>]*>[^<]*<v>(\d+)<\/v>/g)].map(m=>parseInt(m[1])).slice(0,20);
-      const cellVals=refs.map(i=>strings[i]||'').filter(Boolean).slice(0,20);
-      if(cellVals.length) parts.push(`Cols:${cellVals.join(', ').slice(0,200)}`);
-      else {
-        // Numeric cells
-        const vals=[...sxml.matchAll(/<v>([^<]{1,20})<\/v>/g)].map(m=>m[1]).slice(0,15);
-        if(vals.length) parts.push(`Data:${vals.join(', ').slice(0,150)}`);
-      }
-    }
-    return parts.join(' | ')||null;
-  }catch{return null;}
 }
 
 // ─── Robust JSON extraction ───
@@ -2109,8 +1899,8 @@ async function organiseFiles(){
   const batches=[];
   for(let i=0;i<fileNames.length;i+=BATCH) batches.push(fileNames.slice(i,i+BATCH));
 
-  // Token budget — experimental includes rich file content (~80t/file), normal ~22t/file
-  const outTokens = currentMode==='experimental' ? Math.min(16000, BATCH * 80) : Math.min(8000, BATCH * 22);
+  // Token budget per batch
+  const outTokens = Math.min(8000, BATCH * 22);
 
   const system=buildSystem();
   const isExp=currentMode==='experimental';
@@ -2134,7 +1924,7 @@ async function organiseFiles(){
           if(vm){ visionData[fn]=vm[1]; fileContext[fn]=ctx.replace(/__VISION__[A-Za-z0-9+/=]+/,'').trim().replace(/\s*\|\s*$/,'').trim(); }
           else fileContext[fn]=ctx;
         }
-        setStatus(`Reading contents... ${++done}/${total}`);
+        if(++done%10===0) setStatus(`Reading contents... ${done}/${total}`);
       }));
     }
     setStatus('Contents read — organising...');
@@ -2616,6 +2406,171 @@ function showToast(msg,type='info'){
   const t=document.getElementById('toast');
   t.textContent=msg; t.className=`toast show ${type}`;
   clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+// ─── Debug Log — shows exactly what gets sent to AI in experimental mode ───
+async function generateDebugLog(){
+  if(!selectedFiles.length){showToast('Select files first','error');return;}
+  const btn=document.getElementById('debugLogBtn');
+  btn.disabled=true; btn.textContent='🪲 Reading...';
+
+  const model = document.getElementById('modelSelect').value||'(none selected)';
+  const prov  = document.getElementById('providerSelect').value||'(none)';
+  const userInstr = document.getElementById('userPrompt').value.trim();
+  const isExp = currentMode==='experimental';
+  const useVision = isExp;
+
+  origFileMap={};
+  for(const f of selectedFiles) origFileMap[f.webkitRelativePath||f.name]=f;
+  const fileNames=selectedFiles.map(f=>f.webkitRelativePath||f.name);
+  const total=fileNames.length;
+
+  const typeSummary={};
+  for(const fname of fileNames){
+    const cat=getFileCategory(fname.split('/').pop());
+    typeSummary[cat]=(typeSummary[cat]||0)+1;
+  }
+  const typeHint=Object.entries(typeSummary).filter(([,v])=>v>0).map(([k,v])=>`${v} ${k}`).join(', ');
+  const fmtDate=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+
+  // Extract all file contexts exactly as organiseFiles does
+  const fileContext={}, visionData={};
+  const extractionLog=[];
+  setStatus(`Debug: reading ${total} files...`);
+
+  for(let i=0;i<fileNames.length;i+=5){
+    await Promise.all(fileNames.slice(i,i+5).map(async fn=>{
+      const file=origFileMap[fn]; if(!file) return;
+      const raw=await extractFileContext(file,useVision);
+      const entry={file:fn, raw:raw||'(no context extracted)', hasVision:false, textCtx:''};
+      if(raw){
+        const vm=raw.match(/__VISION__([A-Za-z0-9+/=]+)/);
+        if(vm){
+          entry.hasVision=true;
+          entry.visionBytes=Math.round(vm[1].length*0.75); // approx bytes
+          entry.textCtx=raw.replace(/__VISION__[A-Za-z0-9+/=]+/,'').trim().replace(/\s*\|\s*$/,'').trim();
+          visionData[fn]=vm[1];
+          fileContext[fn]=entry.textCtx;
+        } else {
+          entry.textCtx=raw;
+          fileContext[fn]=raw;
+        }
+      }
+      extractionLog.push(entry);
+    }));
+  }
+
+  // Build the exact file list string as organiseFiles does
+  const fileListStr=fileNames.map(f=>{
+    const base=f.split('/').pop();
+    const file=origFileMap[f];
+    const date=file?.lastModified?` [${fmtDate(file.lastModified)}]`:'';
+    const ctx=fileContext[f]?` | ${fileContext[f]}`:'';
+    return base+date+ctx;
+  }).join('\n');
+
+  const visionItems=fileNames.filter(f=>visionData[f]);
+
+  const userMsg=[
+    userInstr?`USER INSTRUCTION (execute precisely):
+${userInstr}
+END INSTRUCTION`:'Organise these files into logical folders with clean names.',
+    `File types: ${typeHint}`,
+    isExp?'File content provided — use it for smarter naming and organisation.':'',
+    visionItems.length?`Image thumbnails included for: ${visionItems.map(f=>f.split('/').pop()).join(', ')}`:'',
+    `
+Use exact filename (without brackets) as the JSON key.`,
+    '\nFiles:', fileListStr
+  ].filter(Boolean).join('\n');
+
+  const systemPrompt=buildSystem();
+  const BATCH=total<=100?total:100;
+  const outTokens=currentMode==='experimental'?Math.min(16000,BATCH*80):Math.min(8000,BATCH*22);
+
+  // ── Build log text ──────────────────────────────────────────────
+  const sep='═'.repeat(60);
+  const line='─'.repeat(60);
+  const now=new Date().toISOString();
+
+  let log=`FolderMind — AI Debug Log
+Generated: ${now}
+${sep}
+
+SESSION INFO
+Provider : ${prov}
+Model    : ${model}
+Mode     : ${currentMode.toUpperCase()}
+Files    : ${total}
+Out tokens budget: ${outTokens}
+User instruction : ${userInstr||'(none)'}
+
+${sep}
+SYSTEM PROMPT (sent as system role)
+${sep}
+${systemPrompt}
+
+${sep}
+USER MESSAGE (sent as user role)
+${sep}
+${userMsg}
+
+${sep}
+EXTRACTION DETAIL — per file
+${sep}
+`;
+
+  for(const e of extractionLog){
+    log+=`
+FILE: ${e.file}
+`;
+    if(e.hasVision){
+      log+=`  Vision thumbnail : YES (~${e.visionBytes} bytes base64)
+`;
+      log+=`  Text context     : ${e.textCtx||'(none)'}
+`;
+    } else {
+      log+=`  Vision thumbnail : NO
+`;
+      log+=`  Text context     : ${e.textCtx||'(none extracted)'}
+`;
+    }
+    log+=`  Raw extractor out: ${e.raw.replace(/__VISION__[A-Za-z0-9+/=]+/,'[VISION_BASE64_OMITTED]')}
+`;
+    log+=line+'\n';
+  }
+
+  log+=`
+${sep}
+SUMMARY
+${sep}
+`;
+  log+=`Files with text context : ${extractionLog.filter(e=>e.textCtx).length}/${total}
+`;
+  log+=`Files with vision thumb : ${extractionLog.filter(e=>e.hasVision).length}/${total}
+`;
+  log+=`Files with NO context   : ${extractionLog.filter(e=>!e.textCtx&&!e.hasVision).length}/${total}
+`;
+  log+=`Approx user msg chars   : ${userMsg.length}
+`;
+  log+=`Approx system msg chars : ${systemPrompt.length}
+`;
+  log+=`Total approx chars sent : ${userMsg.length+systemPrompt.length}
+`;
+  log+=`
+Type breakdown: ${typeHint}
+`;
+
+  // ── Download ──────────────────────────────────────────────────────
+  const blob=new Blob([log],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`foldermind-debug-${Date.now()}.txt`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+
+  setStatus(`Debug log downloaded — ${total} files analysed`);
+  showToast('Debug log downloaded!','success');
+  btn.disabled=false; btn.textContent='🪲 Debug Log';
 }
 
 // ─── Boot: run after all functions/consts defined ───
