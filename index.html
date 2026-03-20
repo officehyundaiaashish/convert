@@ -303,6 +303,7 @@ select{display:none !important;}
 .detected-provider{margin-top:6px;font-size:11px;padding:5px 10px;border-radius:6px;display:flex;align-items:center;gap:6px;}
 .detected-provider.or{background:rgba(108,71,255,0.07);color:var(--accent);border:1px solid rgba(108,71,255,0.15);}
 .detected-provider.groq{background:rgba(15,169,104,0.07);color:var(--accent3);border:1px solid rgba(15,169,104,0.15);}
+.detected-provider.nvidia{background:rgba(118,185,0,0.07);color:#76b900;border:1px solid rgba(118,185,0,0.2);}
 .detected-provider.unknown{background:rgba(200,100,0,0.07);color:var(--warning);border:1px solid rgba(200,100,0,0.15);}
 
 /* Agent list items */
@@ -653,14 +654,15 @@ function detectProvider(key){
   key = key.trim();
   if(key.startsWith('sk-or-')) return 'openrouter';
   if(key.startsWith('gsk_')) return 'groq';
-  if(key.startsWith('nvapi-')) return 'openrouter'; // nvidia via openrouter
+  if(key.startsWith('nvapi-')) return 'nvidia';
+  if(key.startsWith('AIza') || (key.length>=39&&key.length<=40&&!key.includes('-'))) return 'gemini';
   if(key.length > 40 && key.startsWith('sk-')) return 'openrouter';
   if(key.length === 56 && !key.includes('-or-')) return 'groq';
   return 'openrouter'; // default
 }
 
 function getProviderLabel(prov){
-  return prov==='groq' ? 'Groq' : 'OpenRouter';
+  return {openrouter:'OpenRouter',groq:'Groq',nvidia:'NVIDIA NIM',gemini:'Google Gemini'}[prov]||'OpenRouter';
 }
 
 function autoDetectProvider(){
@@ -700,7 +702,8 @@ async function addAgent(){
 
   const agents = loadAgents();
   const id = 'a_'+Date.now();
-  const defaultName = prov==='groq' ? 'Groq Agent' : 'OpenRouter Agent';
+  const names={openrouter:'OpenRouter Agent',groq:'Groq Agent',nvidia:'NVIDIA Agent',gemini:'Gemini Agent'};
+  const defaultName=names[prov]||'AI Agent';
   agents.push({ id, nickname: nickname||defaultName, provider:prov, encodedKey:enc(rawKey), connected:ok });
   saveAgents(agents);
 
@@ -718,15 +721,22 @@ async function addAgent(){
 
 async function testKeyQuick(rawKey, prov){
   try{
-    const endpoint = prov==='groq'
-      ?'https://api.groq.com/openai/v1/chat/completions'
-      :'https://openrouter.ai/api/v1/chat/completions';
+    if(prov==='gemini'){
+      const model=MODELS.gemini[0].value;
+      const url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${rawKey}`;
+      const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({contents:[{role:'user',parts:[{text:'hi'}]}],generationConfig:{maxOutputTokens:3}})});
+      return res.ok;
+    }
+    const eps={groq:'https://api.groq.com/openai/v1/chat/completions',
+               nvidia:'https://integrate.api.nvidia.com/v1/chat/completions'};
+    const endpoint=eps[prov]||'https://openrouter.ai/api/v1/chat/completions';
     const headers={'Content-Type':'application/json','Authorization':`Bearer ${rawKey}`};
     if(prov==='openrouter'){headers['HTTP-Referer']=location.href;headers['X-Title']='FolderMind';}
-    const model = MODELS[prov]?.[0]?.value;
-    const res = await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({model,messages:[{role:'user',content:'hi'}],max_tokens:3})});
+    const model=MODELS[prov]?.[0]?.value;
+    const res=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({model,messages:[{role:'user',content:'hi'}],max_tokens:3})});
     return res.ok;
-  }catch{ return false; }
+  }catch{return false;}
 }
 
 function setActiveAgent(id){
@@ -849,14 +859,35 @@ const MODELS = {
     {value:'llama-3.3-70b-versatile',  label:'Llama 3.3 70B Versatile', group:'Groq'},
     {value:'mixtral-8x7b-32768',       label:'Mixtral 8x7B 32k', group:'Groq'},
     {value:'gemma2-9b-it',             label:'Gemma 2 9B', group:'Groq'},
+  ],
+  nvidia:[
+    {value:'nvidia/llama-3.1-nemotron-70b-instruct', label:'Nemotron 70B Instruct', group:'NVIDIA'},
+    {value:'nvidia/llama-3.3-nemotron-super-49b-v1', label:'Nemotron Super 49B',    group:'NVIDIA'},
+    {value:'nvidia/nemotron-nano-9b-v2',              label:'Nemotron Nano 9B',      group:'NVIDIA'},
+    {value:'meta/llama-3.3-70b-instruct',             label:'Llama 3.3 70B',         group:'Meta'},
+    {value:'meta/llama-3.1-8b-instruct',              label:'Llama 3.1 8B',          group:'Meta'},
+    {value:'deepseek-ai/deepseek-r1',                 label:'DeepSeek R1',            group:'DeepSeek'},
+    {value:'microsoft/phi-4',                         label:'Microsoft Phi-4',        group:'Microsoft'},
+    {value:'mistralai/mistral-7b-instruct-v0.3',      label:'Mistral 7B',             group:'Mistral'},
+  ],
+  gemini:[
+    {value:'gemini-2.5-flash',              label:'Gemini 2.5 Flash',      group:'Gemini'},
+    {value:'gemini-2.5-flash-lite',         label:'Gemini 2.5 Flash-Lite', group:'Gemini'},
+    {value:'gemini-2.5-pro',                label:'Gemini 2.5 Pro',        group:'Gemini'},
+    {value:'gemini-2.0-flash-lite-001',     label:'Gemini 2.0 Flash-Lite', group:'Gemini'},
   ]
 };
 
 // ─── API helpers ───
+function getProvider(){
+  return document.getElementById('providerSelect').value||'openrouter';
+}
 function getEndpoint(){
-  return document.getElementById('providerSelect').value==='groq'
-    ?'https://api.groq.com/openai/v1/chat/completions'
-    :'https://openrouter.ai/api/v1/chat/completions';
+  const p=getProvider();
+  if(p==='groq')   return 'https://api.groq.com/openai/v1/chat/completions';
+  if(p==='nvidia') return 'https://integrate.api.nvidia.com/v1/chat/completions';
+  if(p==='gemini') return null;
+  return 'https://openrouter.ai/api/v1/chat/completions';
 }
 function getHeaders(key){
   const h={'Content-Type':'application/json','Authorization':`Bearer ${key}`};
@@ -1126,25 +1157,14 @@ function initCaseDropdown(){
 function initModelsDropdown(){
   const prov = document.getElementById('providerSelect').value || 'openrouter';
   const raw = MODELS[prov] || [];
-  // Build grouped options for openrouter
-  let opts;
-  if(prov==='openrouter'){
-    opts = raw.map(m=>{
-      const grp = m.value.startsWith('nvidia')?'NVIDIA':
-                  m.value.startsWith('deepseek')?'DeepSeek':
-                  m.value.startsWith('meta-llama')?'Meta Llama':
-                  m.value.startsWith('google')?'Google':
-                  m.value.startsWith('qwen')?'Qwen':
-                  m.value.startsWith('mistral')?'Mistral':
-                  m.value.startsWith('microsoft')?'Microsoft':'Other';
-      const ic = grp==='NVIDIA'?'🔵':grp==='DeepSeek'?'🟠':grp==='Meta Llama'?'🦙':
-                 grp==='Google'?'🔴':grp==='Qwen'?'🟡':grp==='Mistral'?'🌊':
-                 grp==='Microsoft'?'🪟':'🤖';
-      return {value:m.value, label:m.label.replace(' (Free)','').replace(' ⭐',''), icon:ic, badge:m.label.includes('⭐')?'⭐':m.label.includes('🧠')?'🧠':'', group:grp};
-    });
-  } else {
-    opts = raw.map(m=>({value:m.value, label:m.label, icon:'⚡', group:'Groq'}));
-  }
+  // All providers now have .group on each model entry — use directly
+  const opts = raw.map(m=>({
+    value: m.value,
+    label: m.label.replace(' (Free)','').replace(' ⭐','').replace(' 🧠',''),
+    icon:  m.group==='NVIDIA'?'N':m.group==='DeepSeek'?'D':m.group==='Gemini'?'G':
+           m.group==='Groq'?'G':m.group==='Meta'||m.group==='Meta Llama'?'M':'A',
+    group: m.group||prov
+  }));
   CD_DEFS['cd-model'].options = opts;
   CD_DEFS['cd-model'].grouped = true;
   // Set first as default
@@ -1324,19 +1344,70 @@ OUTPUT RULES:
 - Max folder depth: 3 levels, use / as separator`;
 }
 
-// ─── Call AI ───
-async function callAI(key,model,messages,maxTokens=4000){
+// ─── Gemini API adapter ───
+async function callGemini(key, model, messages, maxTokens){
+  const sys  = messages.find(m=>m.role==='system');
+  const msgs = messages.filter(m=>m.role!=='system');
+  const contents = msgs.map(m=>({
+    role: m.role==='assistant'?'model':'user',
+    parts:[{text:m.content}]
+  }));
+  const body={contents, generationConfig:{maxOutputTokens:maxTokens, temperature:0.15}};
+  if(sys) body.systemInstruction={parts:[{text:sys.content}]};
   try{
-    const res=await fetch(getEndpoint(),{method:'POST',headers:getHeaders(key),body:JSON.stringify({model,messages,max_tokens:maxTokens,temperature:0.3})});
+    const url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+    const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error?.message||`Gemini ${res.status}`);
+    const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
+    const parsed=extractJSON(text);
+    if(!parsed) throw new Error('Gemini returned unparseable JSON — try another model');
+    return parsed;
+  }catch(err){
+    showToast(`Gemini: ${err.message.slice(0,80)}`,'error');
+    setStatus(''); return null;
+  }
+}
+
+// ─── Robust JSON extraction ───
+function extractJSON(text){
+  text = text.replace(/```json\s*/gi,'').replace(/```\s*/gi,'').trim();
+  try{ return JSON.parse(text); }catch(_){}
+  const start = text.indexOf('{');
+  if(start === -1) return null;
+  let depth=0, inStr=false, esc=false, end=-1;
+  for(let i=start; i<text.length; i++){
+    const ch=text[i];
+    if(esc){esc=false;continue;}
+    if(ch==='\\' && inStr){esc=true;continue;}
+    if(ch==='"'){inStr=!inStr;continue;}
+    if(inStr)continue;
+    if(ch==='{')depth++;
+    else if(ch==='}'){depth--;if(depth===0){end=i;break;}}
+  }
+  if(end===-1){
+    let healed=text.slice(start);
+    const lastGood=Math.max(healed.lastIndexOf('},'),healed.lastIndexOf('"}'));
+    if(lastGood>0){healed=healed.slice(0,lastGood+1)+'\n}';try{return JSON.parse(healed);}catch(_){}}
+    return null;
+  }
+  try{return JSON.parse(text.slice(start,end+1));}catch(_){return null;}
+}
+
+// ─── Call AI ───
+async function callAI(key,model,messages,maxTokens=8000){
+  if(getProvider()==='gemini') return callGemini(key,model,messages,maxTokens);
+  try{
+    const res=await fetch(getEndpoint(),{method:'POST',headers:getHeaders(key),
+      body:JSON.stringify({model,messages,max_tokens:maxTokens,temperature:0.15})});
     const data=await res.json();
     if(!res.ok)throw new Error(data.error?.message||`Error ${res.status}`);
-    let text=data.choices?.[0]?.message?.content||'';
-    text=text.replace(/```json\n?/gi,'').replace(/```\n?/gi,'').trim();
-    const match=text.match(/\{[\s\S]*\}/);
-    if(!match)throw new Error('AI returned invalid response — try again');
-    return JSON.parse(match[0]);
+    const text=data.choices?.[0]?.message?.content||'';
+    const parsed=extractJSON(text);
+    if(!parsed)throw new Error('AI returned unparseable JSON — try a different model');
+    return parsed;
   }catch(err){
-    showToast(`Error: ${err.message.slice(0,70)}`,'error');
+    showToast(`Error: ${err.message.slice(0,80)}`,'error');
     setStatus('');
     return null;
   }
@@ -1344,29 +1415,24 @@ async function callAI(key,model,messages,maxTokens=4000){
 
 // ─── Post-process AI result ───
 function postProcess(results){
-  const devMode = isDevProject(selectedFiles);
-
+  const devMode=isDevProject(selectedFiles);
   for(const k of Object.keys(results)){
-    const info = results[k];
-    const origFile = origFileMap[k] || origFileMap[k.split('/').pop()] ||
+    const info=results[k];
+    const origFile=origFileMap[k]||origFileMap[k.split('/').pop()]||
       Object.values(origFileMap).find(f=>f.name===k.split('/').pop());
-    const origName = origFile ? origFile.name : k.split('/').pop();
-    const cat = getFileCategory(origName);
-
-    // Dev mode: never rename code or config files
-    if(devMode && (cat==='code' || cat==='data')){
-      info.newName = origName; // keep exact original name
-      info.folder = applyFolderCase(info.folder||'Unsorted');
+    const origName=origFile?origFile.name:k.split('/').pop();
+    const cat=getFileCategory(origName);
+    if(devMode&&(cat==='code'||cat==='data')){
+      info.newName=origName;
+      info.folder=applyFolderCase(info.folder||'Unsorted');
       continue;
     }
-
-    let newName = sanitize(info.newName || origName);
-    newName = stripExtFromName(newName);
-    newName = protectExtension(newName, origName);
-    newName = applyCase(newName);
-
-    info.newName = newName;
-    info.folder = applyFolderCase(info.folder||'Unsorted');
+    let newName=sanitize(info.newName||origName);
+    newName=stripExtFromName(newName);
+    newName=protectExtension(newName,origName);
+    newName=applyCase(newName);
+    info.newName=newName;
+    info.folder=applyFolderCase(info.folder||'Unsorted');
   }
   return results;
 }
@@ -1374,82 +1440,105 @@ function postProcess(results){
 // ─── Organise ───
 async function organiseFiles(){
   const key=document.getElementById('apiKey').value.trim();
-  if(!key){showToast('Enter API key first','error');return;}
+  if(!key){showToast('Select an agent first','error');return;}
   if(!selectedFiles.length){showToast('Select files first','error');return;}
-
   const userInstr=document.getElementById('userPrompt').value.trim();
   const model=document.getElementById('modelSelect').value;
+  if(!model){showToast('Select a model first','error');return;}
   const btn=document.getElementById('organiseBtn');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Thinking...';
   document.getElementById('progressWrap').classList.remove('hidden');
-  setStep(3);
+  setProgress(10); setStep(3);
 
-  origFileMap = {};
+  origFileMap={};
   for(const f of selectedFiles) origFileMap[f.webkitRelativePath||f.name]=f;
-
   const fileNames=selectedFiles.map(f=>f.webkitRelativePath||f.name);
-  const batchSize=250;
+  const total=fileNames.length;
+
+  // Type summary
+  const typeSummary={};
+  for(const fname of fileNames){
+    const cat=getFileCategory(fname.split('/').pop());
+    typeSummary[cat]=(typeSummary[cat]||0)+1;
+  }
+  const typeHint=Object.entries(typeSummary).filter(([,v])=>v>0).map(([k,v])=>`${v} ${k}`).join(', ');
+
+  // Smart batch sizing — keep batches large, rely on robust JSON parser
+  const BATCH = total<=300 ? total : total<=800 ? 400 : 500;
   const batches=[];
-  for(let i=0;i<fileNames.length;i+=batchSize)batches.push(fileNames.slice(i,i+batchSize));
+  for(let i=0;i<fileNames.length;i+=BATCH) batches.push(fileNames.slice(i,i+BATCH));
+  const outTokens=Math.min(16000,Math.max(4000,BATCH*20));
 
   const system=buildSystem();
   let allResults={};
   conversationHistory=[];
 
   for(let b=0;b<batches.length;b++){
-    setStatus(`Processing batch ${b+1} of ${batches.length}...`);
-    setProgress((b/batches.length)*75);
-    // Build type summary for AI context
-    const typeSummary = {};
-    for(const fname of batches[b]){
-      const cat = getFileCategory(fname.split('/').pop());
-      typeSummary[cat] = (typeSummary[cat]||0)+1;
-    }
-    const typeHint = Object.entries(typeSummary)
-      .map(([k,v])=>`${v} ${k} file${v>1?'s':''}`)
-      .join(', ');
+    const batch=batches[b];
+    setStatus(batches.length===1?`Organising ${total} files...`:`Batch ${b+1}/${batches.length} — ${batch.length} files...`);
+    setProgress(10+(b/batches.length)*65);
 
-    const userMsg = `${userInstr||'Organise these files intelligently into logical folders with clean descriptive names.'}\n\nFile types present: ${typeHint}\n\nFiles:\n${batches[b].join('\n')}`;
+    // Indexed format for large batches — saves tokens
+    const useIndex=batch.length>80;
+    const offset=b*BATCH;
+    const fileListStr=useIndex
+      ? batch.map((f,i)=>`${offset+i}|${f.split('/').pop()}`).join('\n')
+      : batch.join('\n');
+    const indexNote=useIndex
+      ? `Use the index number as the JSON key: {"${offset}":{"folder":"...","newName":"..."}, ...}`
+      : '';
+
+    const userMsg=[
+      userInstr||'Organise these files into logical folders with clean names.',
+      `Types: ${typeHint}`,
+      indexNote,
+      '\nFiles:',
+      fileListStr
+    ].filter(Boolean).join('\n');
+
     const msgs=[{role:'system',content:system},{role:'user',content:userMsg}];
-    const parsed=await callAI(key,model,msgs);
+    const parsed=await callAI(key,model,msgs,outTokens);
     if(parsed===null){btn.disabled=false;btn.innerHTML='Generate Preview';setProgress(0);setStep(2);return;}
-    Object.assign(allResults,parsed);
-    if(b===batches.length-1){
-      conversationHistory=[
-        {role:'system',content:system},
-        {role:'user',content:`${userInstr||'Organise intelligently.'}\n\nFiles:\n${fileNames.join('\n')}`},
-        {role:'assistant',content:JSON.stringify(allResults)}
-      ];
-    }
-  }
 
-  // Fallback: any selectedFile not covered by AI response goes to Unsorted
-  // Use robust matching — AI may return just filename, our keys may be full paths
-  const coveredFiles = new Set();
-  for(const k of Object.keys(allResults)){
-    // find which selectedFile this result key refers to
-    for(const f of selectedFiles){
-      const fKey = f.webkitRelativePath||f.name;
-      if(fKey === k || f.name === k || f.name === k.split('/').pop()){
-        coveredFiles.add(fKey);
-        break;
+    // Map index keys back to real filenames
+    if(useIndex){
+      for(const[rawKey,info] of Object.entries(parsed)){
+        const idx=parseInt(rawKey);
+        const realName=!isNaN(idx)&&fileNames[idx]?fileNames[idx]:rawKey;
+        allResults[realName]=info;
       }
-    }
-  }
-  // Add uncovered files as Unsorted
-  for(const f of selectedFiles){
-    const k = f.webkitRelativePath||f.name;
-    if(!coveredFiles.has(k)){
-      allResults[k] = {folder:'Unsorted', newName:f.name};
+    } else {
+      Object.assign(allResults,parsed);
     }
   }
 
-  organiseResult = postProcess(allResults);
+  setProgress(80); setStatus('Applying rules...');
+
+  // Fallback for missed files
+  const covered=new Set();
+  for(const k of Object.keys(allResults)){
+    for(const f of selectedFiles){
+      const fKey=f.webkitRelativePath||f.name;
+      if(fKey===k||f.name===k||f.name===k.split('/').pop()){covered.add(fKey);break;}
+    }
+  }
+  for(const f of selectedFiles){
+    const k=f.webkitRelativePath||f.name;
+    if(!covered.has(k)) allResults[k]={folder:'Unsorted',newName:f.name};
+  }
+
+  conversationHistory=[
+    {role:'system',content:system},
+    {role:'user',content:`${userInstr||'Organise.'}\n\nFiles:\n${fileNames.join('\n')}`},
+    {role:'assistant',content:JSON.stringify(allResults).slice(0,6000)}
+  ];
+
+  organiseResult=postProcess(allResults);
   setProgress(100);
   renderResults(organiseResult);
-  setStatus('Preview ready — review, revise if needed, then download.');
+  setStatus(`Done — ${total} files organised.`);
   btn.disabled=false; btn.innerHTML='Generate Preview';
-  setStep(4); showToast('Preview ready!','success');
+  setStep(4); showToast(`${total} files organised!`,'success');
 }
 
 // ─── Revise ───
