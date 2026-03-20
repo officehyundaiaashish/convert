@@ -660,35 +660,54 @@ let activeAgentId = localStorage.getItem('fm_activeagent')||null;
 function detectProvider(key){
   if(!key) return null;
   key = key.trim();
-  if(/^nvapi-[A-Za-z0-9_-]{20,}/.test(key))    return 'nvidia';
-  if(/^AIza[A-Za-z0-9_-]{20,}/.test(key))       return 'gemini';
-  if(/^gsk_[A-Za-z0-9]{20,}/.test(key))         return 'groq';
-  if(/^sk-or-/i.test(key))                       return 'openrouter';
-  if(/^sk-ant-[A-Za-z0-9_-]{10,}/.test(key))    return 'anthropic';
-  if(/^sk-[a-f0-9]{32}$/.test(key))             return 'deepseek';
-  if(/^sk-[A-Za-z0-9]{20,}/.test(key))          return 'openai';
-  return 'openrouter';
+  if(/^nvapi-[A-Za-z0-9_-]{20,}/.test(key))  return 'nvidia';
+  if(/^AIza[A-Za-z0-9_-]{20,}/.test(key))     return 'gemini';
+  if(/^gsk_[A-Za-z0-9]{20,}/.test(key))       return 'groq';
+  if(/^sk-or-/i.test(key))                     return 'openrouter';
+  if(/^sk-ant-[A-Za-z0-9_-]{10,}/.test(key))  return 'anthropic';
+  if(/^sk-[a-f0-9]{32}$/.test(key))           return 'deepseek';
+  if(/^sk-[A-Za-z0-9]{20,}/.test(key))        return 'openai';
+  return null; // unknown — don't guess
 }
 
 function getProviderLabel(prov){
-  return {openrouter:'OpenRouter',groq:'Groq',nvidia:'NVIDIA NIM',gemini:'Google Gemini',deepseek:'DeepSeek',openai:'OpenAI',anthropic:'Anthropic'}[prov]||'OpenRouter';
+  return {openrouter:'OpenRouter',groq:'Groq',nvidia:'NVIDIA NIM',gemini:'Google Gemini',
+          deepseek:'DeepSeek',openai:'OpenAI',anthropic:'Anthropic'}[prov]||prov||'Unknown';
 }
 
 function autoDetectProvider(){
   const key = document.getElementById('modalApiKey').value.trim();
   const btn = document.getElementById('modalAddBtn');
   const det = document.getElementById('detectedProvider');
-  if(key.length < 8){ det.className='detected-provider hidden'; btn.disabled=true; return; }
+  if(key.length < 6){ det.className='detected-provider hidden'; btn.disabled=true; return; }
+
   const prov = detectProvider(key);
-  btn.disabled = false;
-  if(prov==='groq'){
-    det.className='detected-provider groq';
-    det.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Groq detected — fast &amp; free';
+  const tick = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';
+  const warn = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+
+  const info = {
+    nvidia:     {cls:'nvidia', icon:tick, msg:'NVIDIA NIM — nvapi- key detected'},
+    gemini:     {cls:'or',     icon:tick, msg:'Google Gemini — AIza key detected'},
+    groq:       {cls:'groq',   icon:tick, msg:'Groq — gsk_ key detected'},
+    openrouter: {cls:'or',     icon:tick, msg:'OpenRouter — sk-or- key detected'},
+    anthropic:  {cls:'or',     icon:tick, msg:'Anthropic — sk-ant- key detected'},
+    deepseek:   {cls:'or',     icon:tick, msg:'DeepSeek — sk- hex32 key detected'},
+    openai:     {cls:'or',     icon:tick, msg:'OpenAI — sk- key detected'},
+  };
+
+  if(prov && info[prov]){
+    const p = info[prov];
+    det.className = `detected-provider ${p.cls}`;
+    det.innerHTML = `${p.icon} ${p.msg}`;
+    det.classList.remove('hidden');
+    btn.disabled = false;
   } else {
-    det.className='detected-provider or';
-    det.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> OpenRouter detected — 18 free models';
+    // Key typed but not recognized yet — show neutral hint
+    det.className = 'detected-provider unknown';
+    det.innerHTML = `${warn} Provider not recognized — double-check your key`;
+    det.classList.remove('hidden');
+    btn.disabled = false; // allow attempt anyway
   }
-  det.classList.remove('hidden');
 }
 
 function toggleModalKeyVis(){
@@ -701,7 +720,7 @@ async function addAgent(){
   const nickname = document.getElementById('modalNickname').value.trim();
   if(!rawKey) return;
 
-  const prov = detectProvider(rawKey);
+  const prov = detectProvider(rawKey) || 'openrouter';
   const btn = document.getElementById('modalAddBtn');
   btn.disabled = true;
   btn.textContent = '...';
