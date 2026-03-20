@@ -1409,7 +1409,7 @@ const FILE_TYPES = {
   // Presentations
   presentation: ['ppt','pptx','odp','key'],
   // Code files — RENAME CAREFULLY (only folder, keep name unless clearly messy)
-  code:     ['js','ts','jsx','tsx','py','html','css','scss','sass','java','cpp','c','h','cs','go','rb','swift','kt','php','rs','vue','dart','lua','pl','sh','bat','ps1','bash','zsh','fish','asm','m','mm','r','jl','ex','exs','elm','clj','fs','ml','nim','zig','v','cr'],
+  code:     ['js','ts','jsx','tsx','py','html','css','scss','sass','java','cpp','c','h','cs','go','rb','swift','kt','php','rs','vue','dart','lua','pl','sh','bat','ps1','bash','zsh','fish'],
   // Data / Config
   data:     ['json','xml','yaml','yml','toml','ini','cfg','conf','env','sql','db','sqlite','sqlite3'],
   // Fonts
@@ -1539,8 +1539,8 @@ function imgToThumbnail(file, size=120){
       c2.height=Math.round(img.height*ratio);
       c2.getContext('2d').drawImage(img,0,0,c2.width,c2.height);
       URL.revokeObjectURL(url);
-      // Heavy compression — quality 0.25, JPEG
-      resolve(c2.toDataURL('image/jpeg',0.25).split(',')[1]);
+      // Quality 0.70 JPEG — readable by vision AI, still compact
+      resolve(c2.toDataURL('image/jpeg',0.70).split(',')[1]);
     };
     img.onerror=()=>{URL.revokeObjectURL(url);resolve(null);};
     img.src=url;
@@ -1581,8 +1581,7 @@ function readTextContent(file, maxChars=200){
       resolve(text||null);
     };
     reader.onerror=()=>resolve(null);
-    // Read up to 32KB — enough for any meaningful text/code file first section
-    reader.readAsText(file.slice(0,32768));
+    reader.readAsText(file.slice(0,4096));
   });
 }
 
@@ -1689,8 +1688,20 @@ async function extractFileContext(file, useVision=false){
       const meta=await readImageMeta(file);
       if(meta) parts.push(meta);
       if(useVision){
-        const thumb=await imgToThumbnail(file,80);
+        const thumb=await imgToThumbnail(file,200);
         if(thumb) parts.push(`__VISION__${thumb}`); // marker for callAI
+      } else {
+        // No vision — at least extract dimensions so AI knows orientation/type
+        try{
+          const dims=await new Promise(res=>{
+            const url=URL.createObjectURL(file);
+            const img=new Image();
+            img.onload=()=>{ URL.revokeObjectURL(url); res(`${img.naturalWidth}x${img.naturalHeight}`); };
+            img.onerror=()=>{ URL.revokeObjectURL(url); res(null); };
+            img.src=url;
+          });
+          if(dims) parts.push(`Dimensions:${dims}`);
+        }catch{}
       }
     }
     else if(cat==='audio'){
@@ -1707,21 +1718,16 @@ async function extractFileContext(file, useVision=false){
       const text=await readPdfText(file);
       if(text) parts.push(`Content:${text.slice(0,200)}`);
     }
-    else if(['txt','md','csv','log','xml','html','htm','rtf','rst','adoc'].includes(ext)){
-      const text=await readTextContent(file,400);
+    else if(['txt','md','csv','log','xml','html','htm'].includes(ext)){
+      const text=await readTextContent(file,150);
       if(text) parts.push(`Content:${text}`);
     }
-    else if(['js','ts','jsx','tsx','py','java','cpp','c','h','cs','go','rb','swift',
-             'kt','php','rs','vue','dart','lua','pl','sh','bat','ps1','bash','zsh',
-             'fish','scss','sass','css','asm','m','mm','r','jl','ex','exs','elm',
-             'clj','fs','ml','nim','zig','v','cr'].includes(ext)){
-      const text=await readTextContent(file,400);
+    else if(['js','ts','py','java','cpp','c','go','rb','swift','kt','rs','php'].includes(ext)){
+      const text=await readTextContent(file,120);
       if(text) parts.push(`Code:${text}`);
     }
-    else if(['json','yaml','yml','toml','env','ini','cfg','conf','properties',
-             'sql','graphql','proto','tf','hcl','Makefile','makefile'].includes(ext)||
-            file.name==='Makefile'||file.name==='Dockerfile'||file.name==='.env'){
-      const text=await readTextContent(file,400);
+    else if(['json','yaml','yml','toml','env'].includes(ext)){
+      const text=await readTextContent(file,100);
       if(text) parts.push(`Data:${text}`);
     }
     else if(['zip','rar','7z'].includes(ext)){
@@ -1919,7 +1925,8 @@ async function organiseFiles(){
   const system=buildSystem();
   const isExp=currentMode==='experimental';
   const prov=document.getElementById('providerSelect').value;
-  const useVision=isExp&&(prov==='gemini'||prov==='openai');
+  // Vision supported by all major providers except Groq (text-only) and DeepSeek
+  const useVision=isExp&&!['groq','deepseek'].includes(prov);
   const fmtDate=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
   let allResults={};
   conversationHistory=[];
