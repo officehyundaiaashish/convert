@@ -6,7 +6,7 @@
 <title>FolderMind — AI File Organiser</title>
 <!-- PWA Meta Tags -->
 <meta name="description" content="AI-powered file organizer - Organize your files intelligently with AI">
-<meta name="theme-color" content="#0fa968" id="theme-color-meta">
+<meta name="theme-color" content="#f7f7f5" id="theme-color-meta">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="FolderMind">
@@ -846,7 +846,7 @@ function initTheme(){
     : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
   // Update Android status bar color to match app theme
   const tc = document.getElementById('theme-color-meta');
-  if(tc) tc.content = saved==='dark' ? '#0f0f0f' : '#0fa968';
+  if(tc) tc.content = saved==='dark' ? '#0f0f0f' : '#f7f7f5';
 }
 function toggleTheme(){
   const next = document.body.getAttribute('data-theme')==='dark'?'light':'dark';
@@ -2822,7 +2822,7 @@ function getManifestJson(){
     scope: location.pathname.replace(/[^/]*$/, '') || '/',
     display: 'standalone',
     background_color: '#f7f7f5',
-    theme_color: '#0fa968',
+    theme_color: '#f7f7f5',
     icons: [
       { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
@@ -2919,7 +2919,7 @@ function generateManifest(){
     scope: scope,
     display: 'standalone',
     background_color: '#f7f7f5',
-    theme_color: '#0fa968',
+    theme_color: '#f7f7f5',
     icons: [
       { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
