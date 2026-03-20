@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FolderMind — AI File Organiser</title>
+<!-- PWA Meta Tags -->
+<meta name="description" content="AI-powered file organizer - Organize your files intelligently with AI">
+<meta name="theme-color" content="#f7f7f5" id="theme-color-meta">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="FolderMind">
+<link rel="manifest" id="manifest-link">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root {
@@ -365,6 +372,11 @@ select{display:none !important;}
 .ic-lg svg{width:20px;height:20px;}
 .ic-xl svg{width:24px;height:24px;}
 
+/* PWA Install Button */
+.install-btn{display:none;align-items:center;gap:5px;background:var(--accent);color:white;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;transition:all 0.15s;flex-shrink:0;}
+.install-btn:hover{opacity:0.88;}
+.install-btn.show{display:flex;}
+
 /* ── How It Works modal ── */
 .hiw-btn{background:none;border:1px solid var(--border);border-radius:8px;padding:6px 11px;cursor:pointer;font-size:12px;font-weight:500;color:var(--muted);font-family:inherit;transition:all 0.15s;flex-shrink:0;display:flex;align-items:center;gap:5px;}
 .hiw-btn:hover{border-color:var(--accent);color:var(--accent);}
@@ -450,6 +462,7 @@ select{display:none !important;}
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;">
+      <button class="install-btn" id="installBtn" onclick="installPWA()">📲 Install App</button>
       <button class="hiw-btn" onclick="openHiw()">✦ How it works</button>
       <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Toggle light/dark"><span class="ic"><svg><use href="#ic-moon"/></svg></span></button>
     </div>
@@ -803,6 +816,9 @@ function initTheme(){
   btn.innerHTML = saved==='dark'
     ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'
     : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+  // Update theme-color meta tag for Android status bar
+  const themeColorMeta = document.getElementById('theme-color-meta');
+  themeColorMeta.content = saved==='dark'?'#0f0f0f':'#f7f7f5';
 }
 function toggleTheme(){
   const next = document.body.getAttribute('data-theme')==='dark'?'light':'dark';
@@ -2686,6 +2702,90 @@ Type breakdown: ${typeHint}
   btn.disabled=false; btn.textContent='🪲 Debug Log';
 }
 
+// ═══════════════════════════════
+// PWA FUNCTIONALITY
+// ═══════════════════════════════
+
+// Generate manifest dynamically
+function generateManifest(){
+  const manifestData = {
+    name: "FolderMind — AI File Organiser",
+    short_name: "FolderMind",
+    description: "AI-powered file organizer - Organize your files intelligently with AI",
+    start_url: window.location.href.split('?')[0],
+    display: "standalone",
+    background_color: "#f7f7f5",
+    theme_color: "#f7f7f5",
+    orientation: "any",
+    icons: [
+      {
+        src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230fa968'/%3E%3Cpath d='M25 35c0-2.2 1.8-4 4-4h14l4 4h24c2.2 0 4 1.8 4 4v26c0 2.2-1.8 4-4 4H29c-2.2 0-4-1.8-4-4z' fill='white' stroke='white' stroke-width='2'/%3E%3C/svg%3E",
+        sizes: "any",
+        type: "image/svg+xml",
+        purpose: "any maskable"
+      }
+    ]
+  };
+  const blob = new Blob([JSON.stringify(manifestData)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  document.getElementById('manifest-link').href = url;
+}
+
+// Service Worker code as string
+const swCode = `
+self.addEventListener('install', (e) => {
+  console.log('FolderMind SW: Install');
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (e) => {
+  console.log('FolderMind SW: Activate');
+  e.waitUntil(self.clients.claim());
+});
+
+self.addEventListener('fetch', (e) => {
+  // Let requests pass through - no caching for now
+  e.respondWith(fetch(e.request));
+});
+`;
+
+// Register service worker
+function registerServiceWorker(){
+  if('serviceWorker' in navigator){
+    const blob = new Blob([swCode], {type: 'application/javascript'});
+    const swUrl = URL.createObjectURL(blob);
+    navigator.serviceWorker.register(swUrl)
+      .then(reg => console.log('FolderMind SW: Registered'))
+      .catch(err => console.log('FolderMind SW: Registration failed', err));
+  }
+}
+
+// PWA Install prompt
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById('installBtn').classList.add('show');
+});
+
+function installPWA(){
+  if(!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then((choice) => {
+    if(choice.outcome === 'accepted'){
+      console.log('FolderMind: PWA installed');
+      document.getElementById('installBtn').classList.remove('show');
+    }
+    deferredPrompt = null;
+  });
+}
+
+// Hide install button if already installed
+window.addEventListener('appinstalled', () => {
+  document.getElementById('installBtn').classList.remove('show');
+  console.log('FolderMind: PWA installed');
+});
+
 // ─── How It Works ───
 function openHiw(){
   document.getElementById('hiwOverlay').classList.remove('hidden');
@@ -2703,6 +2803,9 @@ function closeHiwOutside(e){ if(e.target===document.getElementById('hiwOverlay')
   initCaseDropdown();
   initModelsDropdown();
   autoLoadAgent();
+  // Initialize PWA
+  generateManifest();
+  registerServiceWorker();
 })();
 </script>
 </body>
