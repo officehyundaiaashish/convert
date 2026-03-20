@@ -1759,6 +1759,35 @@ async function extractFileContext(file, useVision=false){
       const list=await readZipList(file);
       if(list) parts.push(`Contains:${list}`);
     }
+    else if(ext==='docx'){
+      try{
+        const zip=await JSZip.loadAsync(file);
+        const xmlFile=zip.files['word/document.xml'];
+        if(xmlFile){
+          const xml=await xmlFile.async('string');
+          const text=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,300);
+          if(text.length>10) parts.push(`Content:${text}`);
+        }
+      }catch{}
+    }
+    else if(ext==='xlsx'){
+      try{
+        const zip=await JSZip.loadAsync(file);
+        const ss=zip.files['xl/sharedStrings.xml'];
+        if(ss){
+          const xml=await ss.async('string');
+          const text=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,300);
+          if(text.length>10) parts.push(`Content:${text}`);
+        } else {
+          const s1=zip.files['xl/worksheets/sheet1.xml'];
+          if(s1){
+            const xml=await s1.async('string');
+            const text=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,200);
+            if(text.length>10) parts.push(`Content:${text}`);
+          }
+        }
+      }catch{}
+    }
   }catch(e){}
 
   return parts.length ? parts.join(' | ') : null;
@@ -1946,9 +1975,11 @@ async function organiseFiles(){
     const visionItems=batch.filter(f=>visionData[f]);
 
     const userMsg=[
-      userInstr?`USER INSTRUCTION (execute precisely):\n${userInstr}\nEND INSTRUCTION`:'Organise these files into logical folders with clean names.',
+      userInstr
+        ? `YOUR PRIMARY TASK — follow this EXACTLY, it overrides everything else:\n${userInstr}`
+        : 'Organise these files into logical folders with clean names.',
       `File types: ${typeHint}`,
-      isExp?'File content provided — use it for smarter naming and organisation.':'',
+      isExp?'File content is provided below — use it to understand each file and rename intelligently.':'',
       visionItems.length?`Image thumbnails included for: ${visionItems.map(f=>f.split('/').pop()).join(', ')}`:'',
       `\nUse exact filename (without brackets) as the JSON key.`,
       '\nFiles:', fileListStr
@@ -1973,7 +2004,7 @@ async function organiseFiles(){
       const half=Math.ceil(batch.length/2); parsed={};
       for(const hb of [batch.slice(0,half),batch.slice(half)]){
         const hStr=hb.map(f=>{const base=f.split('/').pop();const file=origFileMap[f];const date=file?.lastModified?` [${fmtDate(file.lastModified)}]`:'';const ctx=fileContext[f]?` | ${fileContext[f]}`:'';return base+date+ctx;}).join('\n');
-        const hMsg=[userInstr?`USER INSTRUCTION:\n${userInstr}\nEND`:'Organise these files.',`File types: ${typeHint}`,'\nUse exact filename as JSON key.','\nFiles:',hStr].filter(Boolean).join('\n');
+        const hMsg=[userInstr?`YOUR PRIMARY TASK:\n${userInstr}`:'Organise these files.',`File types: ${typeHint}`,'\nUse exact filename as JSON key.','\nFiles:',hStr].filter(Boolean).join('\n');
         const hp=await callAI(key,model,[{role:'system',content:system},{role:'user',content:hMsg}],outTokens);
         if(hp) Object.assign(parsed,hp);
       }
@@ -2472,14 +2503,13 @@ async function generateDebugLog(){
   const visionItems=fileNames.filter(f=>visionData[f]);
 
   const userMsg=[
-    userInstr?`USER INSTRUCTION (execute precisely):
-${userInstr}
-END INSTRUCTION`:'Organise these files into logical folders with clean names.',
+    userInstr
+      ? `YOUR PRIMARY TASK — follow this EXACTLY, it overrides everything else:\n${userInstr}`
+      : 'Organise these files into logical folders with clean names.',
     `File types: ${typeHint}`,
-    isExp?'File content provided — use it for smarter naming and organisation.':'',
+    isExp?'File content is provided below — use it to understand each file and rename intelligently.':'',
     visionItems.length?`Image thumbnails included for: ${visionItems.map(f=>f.split('/').pop()).join(', ')}`:'',
-    `
-Use exact filename (without brackets) as the JSON key.`,
+    `\nUse exact filename (without brackets) as the JSON key.`,
     '\nFiles:', fileListStr
   ].filter(Boolean).join('\n');
 
