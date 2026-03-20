@@ -295,15 +295,22 @@ textarea{resize:vertical;min-height:90px;line-height:1.6;}
         <select id="modelSelect"></select>
       </div>
       <div>
-        <label>Case Style</label>
-        <select id="caseStyle">
+        <label>Name Style</label>
+        <select id="caseStyle" onchange="toggleCustomFormat()">
           <option value="natural">Title Case</option>
           <option value="sentence">Sentence case</option>
           <option value="lower">all lowercase</option>
           <option value="upper">ALL UPPERCASE</option>
           <option value="original">Keep Original</option>
+          <option value="custom">Custom format…</option>
         </select>
       </div>
+    </div>
+    <!-- Custom format field — shown only when custom selected -->
+    <div id="customFormatWrap" class="hidden" style="margin-top:8px;">
+      <label style="font-size:11px;color:var(--muted);font-weight:500;display:block;margin-bottom:4px;">Custom naming instruction</label>
+      <input type="text" id="customFormat" placeholder="e.g. Short snake_case, max 3 words  /  YYYY-MM-DD prefix  /  camelCase" />
+      <div style="font-size:10px;color:var(--muted);margin-top:3px;">This instruction will be passed directly to the AI for naming files.</div>
     </div>
     <div style="margin-top:8px;font-size:11px;color:var(--muted);">
       🔑 <a href="https://openrouter.ai" target="_blank" style="color:var(--accent);">openrouter.ai</a>
@@ -714,9 +721,15 @@ function setChip(el){
   document.getElementById('userPrompt').focus();
 }
 
+function toggleCustomFormat(){
+  const v = document.getElementById('caseStyle').value;
+  document.getElementById('customFormatWrap').classList.toggle('hidden', v!=='custom');
+}
+
 // ─── Case style ───
 function applyCase(name){
   const s=document.getElementById('caseStyle').value;
+  if(s==='custom') return name; // AI already applied custom format from prompt
   const dot=name.lastIndexOf('.');
   const ext=dot>0?name.slice(dot):'';
   const base=dot>0?name.slice(0,dot):name;
@@ -730,6 +743,7 @@ function applyCase(name){
 }
 function applyFolderCase(folder){
   const s=document.getElementById('caseStyle').value;
+  if(s==='custom') return folder; // keep AI's folder naming
   return folder.split('/').map(p=>{
     if(s==='lower')return p.toLowerCase();
     if(s==='upper')return p.toUpperCase();
@@ -765,19 +779,95 @@ function protectExtension(newName, origName){
   return newBase + origExt; // force original extension
 }
 
+// ─── File type categories ───
+const FILE_TYPES = {
+  // Icons & system graphics — NOT documents
+  icon:     ['ico','icns','cur'],
+  // Shortcuts — NOT documents
+  shortcut: ['lnk','url','webloc','desktop'],
+  // Executables
+  executable: ['exe','msi','app','dmg','deb','rpm','apk','ipa','pkg'],
+  // Images
+  image:    ['jpg','jpeg','png','gif','svg','webp','bmp','tiff','tif','heic','raw','cr2','nef','arw','psd','ai','xcf'],
+  // Video
+  video:    ['mp4','mov','avi','mkv','wmv','flv','webm','m4v','3gp','ogv'],
+  // Audio
+  audio:    ['mp3','wav','flac','m4a','aac','ogg','wma','opus','aiff'],
+  // Archives
+  archive:  ['zip','rar','tar','gz','7z','bz2','xz','iso','tar.gz','tgz'],
+  // Documents
+  document: ['pdf','doc','docx','txt','md','rtf','odt','pages','epub','mobi'],
+  // Spreadsheets
+  spreadsheet: ['xls','xlsx','csv','ods','numbers','tsv'],
+  // Presentations
+  presentation: ['ppt','pptx','odp','key'],
+  // Code files — RENAME CAREFULLY (only folder, keep name unless clearly messy)
+  code:     ['js','ts','jsx','tsx','py','html','css','scss','sass','java','cpp','c','h','cs','go','rb','swift','kt','php','rs','vue','dart','lua','pl','sh','bat','ps1','bash','zsh','fish'],
+  // Data / Config
+  data:     ['json','xml','yaml','yml','toml','ini','cfg','conf','env','sql','db','sqlite','sqlite3'],
+  // Fonts
+  font:     ['ttf','otf','woff','woff2','eot'],
+};
+
+function getFileCategory(filename){
+  const ext = filename.split('.').pop().toLowerCase();
+  for(const[cat,exts]of Object.entries(FILE_TYPES)){
+    if(exts.includes(ext)) return cat;
+  }
+  return 'other';
+}
+
+function isDevProject(files){
+  // Check if this looks like a development project
+  const names = files.map(f=>f.name.toLowerCase());
+  const devSignals = ['package.json','requirements.txt','setup.py','cargo.toml','go.mod','pom.xml','build.gradle','makefile','cmakelists.txt','composer.json','.gitignore','readme.md','index.js','index.ts','main.py','app.py','main.go'];
+  return devSignals.some(s=>names.includes(s));
+}
+
 // ─── System prompt ───
 function buildSystem(){
-  const s=document.getElementById('caseStyle').value;
-  const ci={natural:'Title Case for names.',lower:'All lowercase.',upper:'ALL UPPERCASE.',sentence:'Sentence case.',original:'Keep original casing.'}[s];
-  return `You are a file organisation assistant. ${ci}
-CRITICAL rules:
-- Handle ALL file types: documents, images, videos, audio, shortcuts (.lnk, .url), icons (.ico), executables (.exe), archives, code files, and any other type
-- Shortcuts (.lnk, .url) should be grouped with what they point to (e.g. a shortcut to a game goes in Games)
-- NEVER change file extensions — keep them exactly as they are
-- NEVER put the extension word inside the file name base (e.g. do NOT write "Report PDF" — just "Report")
-- NEVER use underscores between words — use spaces
-- Return ONLY a valid raw JSON object, no markdown, no code fences
-- You MUST return an entry for EVERY file given to you — do not skip any
+  const s = document.getElementById('caseStyle').value;
+  const customFmt = s==='custom' ? document.getElementById('customFormat').value.trim() : '';
+
+  const caseInstr = {
+    natural:  'Use Title Case for all file and folder names.',
+    sentence: 'Use Sentence case (first word capitalised only).',
+    lower:    'Use all lowercase for all file and folder names.',
+    upper:    'USE ALL UPPERCASE for all file and folder names.',
+    original: 'Keep original casing as much as possible.',
+    custom:   customFmt ? `File naming format: ${customFmt}` : 'Use Title Case.',
+  }[s] || 'Use Title Case.';
+
+  const devMode = isDevProject(selectedFiles);
+
+  return `You are a file organisation assistant. ${caseInstr}
+
+FILE TYPE AWARENESS — treat each type correctly:
+- .ico, .icns, .cur files = ICONS (not documents) → put in "Icons" or "Assets/Icons" folder
+- .lnk, .url, .webloc = SHORTCUTS → group near what they point to (game shortcut → Games, etc.)
+- .exe, .msi, .app, .dmg = EXECUTABLES / INSTALLERS → "Software" or "Installers"
+- .psd, .ai, .xcf, .sketch, .fig = DESIGN FILES → "Design" folder
+- .py, .js, .ts, .java etc = CODE → see code rules below
+- Images (.jpg/.png/.gif etc), Videos (.mp4/.mov etc), Audio (.mp3/.wav etc) must each go in their own category
+
+RENAMING RULES — very important:
+- Keep names SHORT and RECOGNISABLE — max 4-5 words in the base name
+- Do NOT replace the full name — shorten and clean it while keeping meaning
+- If name is random (e.g. "xkf82jd_final_v3_FINAL2") → make it short and descriptive based on context
+- If name is already clear and short → keep it as-is or make minor cleanup only
+- Never put the extension word inside the base name (e.g. never "Report PDF" — just "Report")
+- Never use underscores between words — use spaces
+- NEVER change the file extension — keep exactly as-is${devMode ? `
+
+DEV PROJECT DETECTED — special rules:
+- Do NOT rename any code files (.py, .js, .ts, .html, .css, .json, .yaml etc) — keep exact original name
+- Do NOT rename config files (package.json, requirements.txt, .env, .gitignore etc)
+- Only organise into folders if the project is clearly multi-module; otherwise keep flat
+- Suggested folders: src/, tests/, docs/, assets/, config/ — only if files clearly belong there` : ''}
+
+OUTPUT RULES:
+- Return ONLY a valid raw JSON object — no markdown, no code fences, no explanation
+- You MUST return an entry for EVERY file — do not skip any file
 - Format: { "original_filename": { "folder": "Folder/Sub", "newName": "Clean Name.ext" } }
 - Max folder depth: 3 levels, use / as separator`;
 }
@@ -802,12 +892,21 @@ async function callAI(key,model,messages,maxTokens=4000){
 
 // ─── Post-process AI result ───
 function postProcess(results){
+  const devMode = isDevProject(selectedFiles);
+
   for(const k of Object.keys(results)){
     const info = results[k];
-    // Find original file — try full path then just filename
-    const origFile = origFileMap[k] || origFileMap[k.split('/').pop()] || 
+    const origFile = origFileMap[k] || origFileMap[k.split('/').pop()] ||
       Object.values(origFileMap).find(f=>f.name===k.split('/').pop());
     const origName = origFile ? origFile.name : k.split('/').pop();
+    const cat = getFileCategory(origName);
+
+    // Dev mode: never rename code or config files
+    if(devMode && (cat==='code' || cat==='data')){
+      info.newName = origName; // keep exact original name
+      info.folder = applyFolderCase(info.folder||'Unsorted');
+      continue;
+    }
 
     let newName = sanitize(info.newName || origName);
     newName = stripExtFromName(newName);
@@ -848,7 +947,17 @@ async function organiseFiles(){
   for(let b=0;b<batches.length;b++){
     setStatus(`Processing batch ${b+1} of ${batches.length}...`);
     setProgress((b/batches.length)*75);
-    const userMsg=`${userInstr||'Organise these files intelligently into logical folders with clean descriptive names.'}\n\nFiles:\n${batches[b].join('\n')}`;
+    // Build type summary for AI context
+    const typeSummary = {};
+    for(const fname of batches[b]){
+      const cat = getFileCategory(fname.split('/').pop());
+      typeSummary[cat] = (typeSummary[cat]||0)+1;
+    }
+    const typeHint = Object.entries(typeSummary)
+      .map(([k,v])=>`${v} ${k} file${v>1?'s':''}`)
+      .join(', ');
+
+    const userMsg = `${userInstr||'Organise these files intelligently into logical folders with clean descriptive names.'}\n\nFile types present: ${typeHint}\n\nFiles:\n${batches[b].join('\n')}`;
     const msgs=[{role:'system',content:system},{role:'user',content:userMsg}];
     const parsed=await callAI(key,model,msgs);
     if(parsed===null){btn.disabled=false;btn.innerHTML='Generate Preview';setProgress(0);setStep(2);return;}
@@ -1251,38 +1360,33 @@ function toggleKeyVis(){const k=document.getElementById('apiKey');k.type=k.type=
 
 // ─── Misc ───
 function icon(n){
-  const e=(n||'').split('.').pop().toLowerCase();
-  const map={
-    // Documents
-    pdf:'📕',doc:'📝',docx:'📝',txt:'📄',md:'📄',rtf:'📄',odt:'📄',pages:'📄',
-    // Spreadsheets
-    xls:'📊',xlsx:'📊',csv:'📊',ods:'📊',numbers:'📊',
-    // Presentations
-    ppt:'📊',pptx:'📊',odp:'📊',key:'📊',
-    // Images
-    jpg:'🖼',jpeg:'🖼',png:'🖼',gif:'🖼',svg:'🎨',webp:'🖼',bmp:'🖼',tiff:'🖼',tif:'🖼',heic:'🖼',raw:'🖼',
-    // Video
-    mp4:'🎬',mov:'🎬',avi:'🎬',mkv:'🎬',wmv:'🎬',flv:'🎬',webm:'🎬',m4v:'🎬',
-    // Audio
-    mp3:'🎵',wav:'🎵',flac:'🎵',m4a:'🎵',aac:'🎵',ogg:'🎵',wma:'🎵',
-    // Archives
-    zip:'📦',rar:'📦',tar:'📦',gz:'📦','7z':'📦',bz2:'📦',xz:'📦',dmg:'📦',iso:'📦',
-    // Code
-    js:'💻',ts:'💻',jsx:'💻',tsx:'💻',py:'🐍',html:'🌐',css:'🎨',json:'⚙',xml:'⚙',
-    php:'💻',java:'💻',cpp:'💻',c:'💻',cs:'💻',go:'💻',rb:'💻',swift:'💻',kt:'💻',
-    sh:'💻',bat:'💻',ps1:'💻',
-    // Shortcuts & system
-    lnk:'🔗',url:'🔗',webloc:'🔗',desktop:'🔗',
-    ico:'🖼',icns:'🖼',
-    exe:'⚙',msi:'⚙',app:'⚙',deb:'⚙',rpm:'⚙',
-    // Fonts
-    ttf:'🔤',otf:'🔤',woff:'🔤',woff2:'🔤',
-    // Data
-    sql:'🗄',db:'🗄',sqlite:'🗄',
-    // Design
-    psd:'🎨',ai:'🎨',xd:'🎨',sketch:'🎨',fig:'🎨',figma:'🎨',
-  };
-  return map[e]||'📄';
+  const cat = getFileCategory(n||'');
+  const e = (n||'').split('.').pop().toLowerCase();
+  // Specific overrides first
+  if(cat==='icon') return '🎨';
+  if(cat==='shortcut') return '🔗';
+  if(cat==='executable') return '⚙️';
+  if(cat==='image'){
+    if(['psd','ai','xcf'].includes(e)) return '🎨';
+    return '🖼';
+  }
+  if(cat==='video') return '🎬';
+  if(cat==='audio') return '🎵';
+  if(cat==='archive') return '📦';
+  if(cat==='document'){
+    if(e==='pdf') return '📕';
+    return '📝';
+  }
+  if(cat==='spreadsheet') return '📊';
+  if(cat==='presentation') return '📊';
+  if(cat==='code'){
+    if(e==='py') return '🐍';
+    if(['html','css','js','ts'].includes(e)) return '🌐';
+    return '💻';
+  }
+  if(cat==='data') return '⚙';
+  if(cat==='font') return '🔤';
+  return '📄';
 }
 function setStatus(m){document.getElementById('statusText').textContent=m;}
 function setProgress(p){document.getElementById('progressBar').style.width=p+'%';}
