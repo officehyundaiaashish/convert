@@ -1219,6 +1219,7 @@ function clearAll(){
   document.getElementById('resultsCard').classList.add('hidden');
   document.getElementById('statusText').textContent='';
   document.getElementById('progressWrap').classList.add('hidden');
+  document.getElementById('userPrompt').value='';
   renderSelectedFiles();
   setStep(1);
 }
@@ -1559,17 +1560,35 @@ function buildSystem(){
   const customFmt = s==='custom' ? document.getElementById('customFormat').value.trim() : '';
 
   const caseInstr = {
-    natural:  'Prefer Title Case as a starting point, but use your judgment — keep codes/IDs/VINs uppercase as-is.',
-    original: 'Prefer keeping original casing as a starting point.',
-    sentence: 'Prefer Sentence case as a starting point.',
-    lower:    'Prefer lowercase as a starting point.',
-    upper:    'Prefer UPPERCASE as a starting point.',
+    natural:  'Title Case preferred — keep codes/IDs/VINs uppercase as-is.',
+    original: 'Keep original casing.',
+    sentence: 'Sentence case preferred.',
+    lower:    'Lowercase preferred.',
+    upper:    'UPPERCASE preferred.',
     custom:   customFmt || '',
   }[s] || '';
 
   const devMode = isDevProject(selectedFiles);
 
-  return `File organiser. Follow the user PRIMARY TASK exactly. Use file content to infer meaning. Fallbacks (only for files the task does not cover): ${caseInstr||'clean readable names'}; spaces not underscores; keep VINs/IDs/codes uppercase; no extension word in name; never change extension; max 4 words; images→Images, videos→Videos, audio→Audio, exe→Software.${devMode?' No renaming code files.':''} Return raw JSON only, no markdown, every file included: {"original_filename":{"folder":"Folder/Sub","newName":"New Name.ext"}} Max 3 folder levels.`;
+  return `You are a file organiser AI. Your job is to assign each file a folder and a clean new name.
+
+RESPONSE FORMAT: Raw JSON only — no markdown, no explanation. Every input file must appear.
+Schema: {"original_filename": {"folder": "Folder/Subfolder", "newName": "New Name.ext"}}
+To DELETE a file from the output: {"original_filename": {"delete": true}}
+Max 3 folder levels. Use forward slashes for subfolders.
+
+=== PRIORITY RULES (follow in this order) ===
+
+[90% — USER INTENT]: The user prompt and your own intelligent understanding of the files are the PRIMARY drivers. Follow the user's instruction EXACTLY and completely. Use file names, dates, and content clues to make smart decisions where the user prompt does not specify.
+
+[10% — STYLE FALLBACKS]: Only apply these when the user prompt does not cover a file:
+- Naming style: ${caseInstr||'clean readable names'}
+- Use spaces, not underscores
+- Keep VINs/IDs/codes uppercase
+- Do not include the file extension word in the name
+- Never change the file extension
+- Max 4 words per filename
+- Default folders: images→Images, videos→Videos, audio→Audio, executables→Software${devMode?'\n- Do NOT rename code files — only move them to folders':''}`
 }
 
 // ─── Anthropic API adapter ───
@@ -1963,6 +1982,8 @@ function postProcess(results){
   const devMode=isDevProject(selectedFiles);
   for(const k of Object.keys(results)){
     const info=results[k];
+    // Handle AI-requested deletions
+    if(info.delete===true) continue;
     const origFile=origFileMap[k]||origFileMap[k.split('/').pop()]||
       Object.values(origFileMap).find(f=>f.name===k.split('/').pop());
     const origName=origFile?origFile.name:k.split('/').pop();
@@ -1975,12 +1996,13 @@ function postProcess(results){
     let newName=sanitize(info.newName||origName);
     newName=stripExtFromName(newName);
     newName=protectExtension(newName,origName);
-    // Only override AI's naming when user explicitly picked a transform
-    // natural/original = trust AI completely
     const s=document.getElementById('caseStyle').value;
-    // Style is a hint — AI handles casing, no force override
     info.newName=newName;
     info.folder=applyFolderCase(info.folder||'Other');
+  }
+  // Remove deleted entries from results
+  for(const k of Object.keys(results)){
+    if(results[k].delete===true) delete results[k];
   }
   return results;
 }
@@ -2082,6 +2104,7 @@ async function organiseFiles(){
       `File types: ${typeHint}`,
       isExp?'File content is provided below — use it to understand each file and rename intelligently.':'',
       visionItems.length?`Image thumbnails included for: ${visionItems.map(f=>f.split('/').pop()).join(', ')}`:'',
+      `\nIMPORTANT: If the user task says to delete or exclude specific files, use {"delete": true} for those entries.`,
       `\nUse exact filename (without brackets) as the JSON key.`,
       '\nFiles:', fileListStr
     ].filter(Boolean).join('\n');
@@ -2149,6 +2172,12 @@ async function organiseFiles(){
   ];
 
   organiseResult=postProcess(allResults);
+
+  // Sync selectedFiles — remove any AI-deleted files
+  const keptKeys=new Set(Object.keys(organiseResult).map(k=>k.split('/').pop().toLowerCase()));
+  selectedFiles=selectedFiles.filter(f=>keptKeys.has(f.name.toLowerCase()));
+  renderSelectedFiles();
+
   setProgress(100);
   renderResults(organiseResult);
   setStatus(`Done — ${total} files organised.`);
@@ -2171,7 +2200,7 @@ async function reviseFiles(){
   // use global origFileMap
   const msgs=[
     ...conversationHistory,
-    {role:'user',content:`=== REVISION INSTRUCTION (follow EXACTLY) ===\n${revision}\n=== END ===\n\nApply this revision and return COMPLETE updated JSON for ALL files. Do not skip any file.`}
+    {role:'user',content:`=== REVISION INSTRUCTION (follow EXACTLY) ===\n${revision}\n=== END ===\n\nApply this revision and return COMPLETE updated JSON for ALL files. If the instruction says to delete/exclude/remove specific files, use {"delete": true} for those entries. Do not skip any file.`}
   ];
 
   const parsed=await callAI(key,model,msgs,5000);
@@ -2182,6 +2211,12 @@ async function reviseFiles(){
   }
 
   organiseResult = postProcess(organiseResult);
+
+  // Sync selectedFiles — remove any files that AI deleted from organiseResult
+  const remainingKeys = new Set(Object.keys(organiseResult).map(k=>k.split('/').pop().toLowerCase()));
+  selectedFiles = selectedFiles.filter(f=>remainingKeys.has(f.name.toLowerCase()));
+  renderSelectedFiles();
+
   conversationHistory.push(
     {role:'user',content:`Revise: ${revision}`},
     {role:'assistant',content:JSON.stringify(parsed)}
