@@ -1641,66 +1641,24 @@ async function organiseFiles(){
 
   setProgress(80); setStatus('Applying rules...');
 
-  // Find missed files — case-insensitive basename match
-  function getCovered(results){
-    const covered=new Set();
-    for(const k of Object.keys(results)){
-      const kBase=k.split('/').pop().toLowerCase();
-      for(const f of selectedFiles){
-        const fKey=f.webkitRelativePath||f.name;
-        if(fKey===k||f.name.toLowerCase()===kBase){covered.add(fKey);break;}
-      }
-    }
-    return covered;
-  }
-
-  // Retry missed files — up to 2 rounds
-  for(let retry=0; retry<2; retry++){
-    const covered=getCovered(allResults);
-    const missed=selectedFiles.filter(f=>!covered.has(f.webkitRelativePath||f.name));
-    if(!missed.length) break;
-
-    setStatus(`Retrying ${missed.length} missed file${missed.length>1?'s':''}...`);
-    const missedNames=missed.map(f=>f.webkitRelativePath||f.name);
-
-    // Small batches for retry
-    const RBATCH=50;
-    for(let i=0;i<missedNames.length;i+=RBATCH){
-      const rb=missedNames.slice(i,i+RBATCH);
-      const rbStr=rb.map((f,j)=>{
-        const file=origFileMap[f];
-        const date=file?.lastModified?fmtDate(file.lastModified):'';
-        return `${i+j}|${f.split('/').pop()}${date?'|'+date:''}`;
-      }).join('\n');
-      const rbMsg=[
-        userInstr?`=== USER INSTRUCTION ===\n${userInstr}\n=== END ===`:'Organise these files.',
-        `Use index as JSON key: {"0":{...}}`,
-        '\nFiles:',rbStr
-      ].filter(Boolean).join('\n');
-      const rp=await callAI(key,model,[{role:'system',content:system},{role:'user',content:rbMsg}],Math.min(4000,rb.length*22));
-      if(rp){
-        for(const[rawKey,info] of Object.entries(rp)){
-          const idx=parseInt(rawKey);
-          const realName=!isNaN(idx)&&rb[idx]?rb[idx]:rawKey;
-          const aiBase=realName.split('/').pop().toLowerCase();
-          const match=missedNames.find(f=>f.split('/').pop().toLowerCase()===aiBase)||realName;
-          allResults[match]=info;
-        }
-      }
+  // Simple coverage check — case-insensitive basename match
+  const covered=new Set();
+  for(const k of Object.keys(allResults)){
+    const kBase=k.split('/').pop().toLowerCase();
+    for(const f of selectedFiles){
+      const fKey=f.webkitRelativePath||f.name;
+      if(fKey===k||f.name.toLowerCase()===kBase){covered.add(fKey);break;}
     }
   }
-
-  // Final fallback — any still-missed file gets auto-categorised by extension (no AI)
-  const finalCovered=getCovered(allResults);
+  // Missed files — auto-categorise by extension, no AI needed
+  const catFolders={image:'Images',video:'Videos',audio:'Audio',document:'Documents',
+    archive:'Archives',code:'Code',spreadsheet:'Spreadsheets',presentation:'Presentations',
+    icon:'Icons',shortcut:'Shortcuts',executable:'Software',font:'Fonts',data:'Data'};
   for(const f of selectedFiles){
     const k=f.webkitRelativePath||f.name;
-    if(!finalCovered.has(k)){
+    if(!covered.has(k)){
       const cat=getFileCategory(f.name);
-      const folderMap={image:'Images',video:'Videos',audio:'Audio',document:'Documents',
-                       archive:'Archives',code:'Code',spreadsheet:'Spreadsheets',
-                       presentation:'Presentations',icon:'Icons',shortcut:'Shortcuts',
-                       executable:'Software',font:'Fonts',data:'Data'};
-      allResults[k]={folder:folderMap[cat]||'Other',newName:f.name};
+      allResults[k]={folder:catFolders[cat]||'Other',newName:f.name};
     }
   }
 
