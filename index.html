@@ -1259,14 +1259,12 @@ function applyCase(name){
 }
 function applyFolderCase(folder){
   const s=document.getElementById('caseStyle').value;
-  if(s==='custom') return folder; // keep AI's folder naming
-  return folder.split('/').map(p=>{
-    if(s==='lower')return p.toLowerCase();
-    if(s==='upper')return p.toUpperCase();
-    if(s==='natural')return p.replace(/\b\w/g,c=>c.toUpperCase());
-    if(s==='sentence')return p.charAt(0).toUpperCase()+p.slice(1).toLowerCase();
-    return p;
-  }).join('/');
+  // Only transform when user explicitly picked lower/upper/sentence
+  // natural/original/custom = trust AI's folder names
+  if(s==='lower') return folder.split('/').map(p=>p.toLowerCase()).join('/');
+  if(s==='upper') return folder.split('/').map(p=>p.toUpperCase()).join('/');
+  if(s==='sentence') return folder.split('/').map(p=>p.charAt(0).toUpperCase()+p.slice(1).toLowerCase()).join('/');
+  return folder;
 }
 
 // ─── Sanitize + extension protection ───
@@ -1346,13 +1344,13 @@ function buildSystem(){
   const customFmt = s==='custom' ? document.getElementById('customFormat').value.trim() : '';
 
   const caseInstr = {
-    natural:  'Title Case for all file and folder names.',
-    sentence: 'Sentence case (first word capitalised only).',
-    lower:    'all lowercase for all file and folder names.',
-    upper:    'ALL UPPERCASE for all file and folder names.',
-    original: 'Keep original casing as much as possible.',
-    custom:   customFmt ? customFmt : 'Title Case.',
-  }[s] || 'Title Case.';
+    natural:  '',  // AI decides — trust AI naming completely
+    original: '',  // AI decides
+    sentence: 'Use Sentence case for file and folder names.',
+    lower:    'Use all lowercase for file and folder names.',
+    upper:    'USE ALL UPPERCASE for file and folder names.',
+    custom:   customFmt || '',
+  }[s] || '';
 
   const devMode = isDevProject(selectedFiles);
 
@@ -1369,7 +1367,7 @@ You MUST follow these specific instructions literally and precisely. Look carefu
 USER INSTRUCTION HAS THE HIGHEST PRIORITY. Generic rules below are only fallbacks for files the user instruction does not cover.
 
 ─── FALLBACK RULES (only when user gives no specific instruction for a file) ───
-Naming: ${caseInstr}
+${caseInstr ? `Naming: ${caseInstr}` : 'Use clean, well-formatted names — keep uppercase codes/IDs/VINs as-is.'}
 - Icons (.ico .icns) → "Icons" folder — NOT Documents
 - Shortcuts (.lnk .url) → group with what they point to
 - Executables (.exe .msi .dmg) → "Software" folder
@@ -1499,9 +1497,12 @@ function postProcess(results){
     let newName=sanitize(info.newName||origName);
     newName=stripExtFromName(newName);
     newName=protectExtension(newName,origName);
-    newName=applyCase(newName);
+    // Only override AI's naming when user explicitly picked a transform
+    // natural/original = trust AI completely
+    const s=document.getElementById('caseStyle').value;
+    if(s==='lower'||s==='upper'||s==='sentence') newName=applyCase(newName);
     info.newName=newName;
-    info.folder=applyFolderCase(info.folder||'Unsorted');
+    info.folder=applyFolderCase(info.folder||'Other');
   }
   return results;
 }
