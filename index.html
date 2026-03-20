@@ -1725,20 +1725,41 @@ async function extractFileContext(file, useVision=false){
     else if(ext==='docx'){
       try{
         const zip=await JSZip.loadAsync(file);
-        const xmlKeys=['word/document.xml'].concat(
-          Object.keys(zip.files).filter(k=>k.startsWith('word/')&&k.endsWith('.xml')&&k!=='word/document.xml')
-        );
+        // Priority: document.xml first, then all other word/ xmls
+        const allWordKeys=Object.keys(zip.files).filter(k=>k.startsWith('word/')&&k.endsWith('.xml'));
+        const xmlKeys=['word/document.xml',...allWordKeys.filter(k=>k!=='word/document.xml')];
         const collected=[];
-        for(const key of xmlKeys.slice(0,4)){
-          const entry=zip.files[key]; if(!entry) continue;
-          const xml=await entry.async('string');
-          const wt=(xml.match(/<w:t[^>]*>([^<]{1,200})<\/w:t>/g)||[])
-            .map(t=>t.replace(/<[^>]+>/g,'').trim()).filter(t=>t.length>1);
-          if(wt.length){ collected.push(...wt); break; }
-          const plain=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
-          if(plain.length>20){ collected.push(plain.slice(0,300)); break; }
+        for(const key of xmlKeys.slice(0,10)){
+          const entry=zip.files[key];
+          if(!entry||entry.dir) continue;
+          let xml='';
+          try{ xml=await entry.async('string'); }catch{ continue; }
+          if(!xml||xml.length<20) continue;
+          // Strategy 1: standard w:t text runs (works for most docx)
+          const wt=(xml.match(/<w:t(?:\s[^>]*)?>([^<]{1,300})<\/w:t>/g)||[])
+            .map(t=>t.replace(/<[^>]+>/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim())
+            .filter(t=>t.length>1&&/[a-zA-Z0-9]/.test(t));
+          if(wt.length){ collected.push(...wt.slice(0,80)); break; }
+          // Strategy 2: strip all tags, take raw text (fallback for non-standard)
+          const plain=xml.replace(/<[^>]+>/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/\s+/g,' ').trim();
+          const meaningful=plain.replace(/[^\x20-\x7E\u00A0-\uFFFF]/g,'').trim();
+          if(meaningful.length>20){ collected.push(meaningful.slice(0,300)); break; }
         }
-        const text=collected.join(' ').replace(/\s+/g,' ').trim().slice(0,300);
+        // Also grab document properties (app.xml, core.xml) for title/subject
+        for(const propKey of ['docProps/core.xml','docProps/app.xml']){
+          const entry=zip.files[propKey];
+          if(!entry) continue;
+          try{
+            const xml=await entry.async('string');
+            const title=(xml.match(/<dc:title>([^<]+)<\/dc:title>/)||[])[1];
+            const subject=(xml.match(/<dc:subject>([^<]+)<\/dc:subject>/)||[])[1];
+            const appName=(xml.match(/<vt:lpstr>([^<]{2,60})<\/vt:lpstr>/)||[])[1];
+            if(title) collected.unshift(`Title:${title.trim()}`);
+            if(subject) collected.unshift(`Subject:${subject.trim()}`);
+            if(appName&&!/Microsoft|Word|Excel/i.test(appName)) collected.push(appName.trim());
+          }catch{}
+        }
+        const text=collected.join(' ').replace(/\s+/g,' ').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,'').trim().slice(0,300);
         if(text.length>10) parts.push(`Content:${text}`);
       }catch{}
     }
@@ -1746,24 +1767,59 @@ async function extractFileContext(file, useVision=false){
       try{
         const zip=await JSZip.loadAsync(file);
         const collected=[];
-        const ss=zip.files['xl/sharedStrings.xml'];
-        if(ss){
-          const xml=await ss.async('string');
+        // 1. Shared strings — try both casings, parse all <t> variants
+        const ssEntry=zip.files['xl/sharedStrings.xml']||zip.files['xl/SharedStrings.xml']
+          ||Object.values(zip.files).find(f=>f.name.toLowerCase()==='xl/sharedstrings.xml');
+        if(ssEntry){
+          const xml=await ssEntry.async('string');
           const tokens=(xml.match(/<t(?:\s[^>]*)?>([^<]+)<\/t>/g)||[])
-            .map(t=>t.replace(/<[^>]+>/g,'').trim()).filter(t=>t.length>0);
-          collected.push(...tokens);
+            .map(t=>t.replace(/<[^>]+>/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').trim())
+            .filter(t=>t.length>0&&t.length<200&&/[a-zA-Z]/.test(t));
+          collected.push(...tokens.slice(0,120));
         }
-        const sheetKeys=Object.keys(zip.files).filter(k=>/xl\/worksheets\/sheet\d+\.xml/.test(k));
-        for(const sk of sheetKeys.slice(0,4)){
-          const xml=await zip.files[sk].async('string');
-          const is=(xml.match(/<is>[\s\S]*?<\/is>/g)||[]).map(s=>s.replace(/<[^>]+>/g,' ').trim());
-          collected.push(...is);
-          const vals=(xml.match(/<v>([^<]+)<\/v>/g)||[])
+        // 2. Sheet XML — inline strings, string-typed cells, short values
+        const sheetKeys=Object.keys(zip.files).filter(k=>/xl[/\\]worksheets[/\\]sheet\d+\.xml/i.test(k));
+        for(const sk of sheetKeys.slice(0,6)){
+          const entry=zip.files[sk];
+          if(!entry||entry.dir) continue;
+          let xml=''; try{ xml=await entry.async('string'); }catch{ continue; }
+          // Inline strings <is><t>text</t></is>
+          const inlineStr=(xml.match(/<is>[\s\S]*?<\/is>/g)||[])
+            .map(s=>s.replace(/<[^>]+>/g,' ').replace(/&amp;/g,'&').replace(/\s+/g,' ').trim())
+            .filter(s=>s.length>1&&/[a-zA-Z]/.test(s));
+          collected.push(...inlineStr);
+          // String-typed cells <c t="str"> or <c t="inlineStr">
+          const strCells=(xml.match(/<c[^>]+t="(?:str|inlineStr)"[^>]*>[\s\S]*?<\/c>/g)||[])
+            .map(c=>{ const m=c.match(/<v>([^<]*)<\/v>/); return m?m[1].replace(/&amp;/g,'&').trim():''; })
+            .filter(v=>v.length>1&&v.length<200&&/[a-zA-Z]/.test(v));
+          collected.push(...strCells);
+          // All short <v> values — skip long numbers (dates as serials, large IDs)
+          const vals=(xml.match(/<v>([^<]{1,60})<\/v>/g)||[])
             .map(v=>v.replace(/<[^>]+>/g,'').trim())
-            .filter(v=>v.length>0&&!/^\d{5,}(\.\d+)?$/.test(v)&&!/^4[0-9]{4}/.test(v));
+            .filter(v=>v.length>0&&v.length<60&&!/^\d{5,}(\.\d+)?$/.test(v)&&!/^4[0-9]{4}\d/.test(v)&&/[a-zA-Z]/.test(v));
           collected.push(...vals);
+          if(collected.length>200) break;
         }
-        const text=[...new Set(collected)].filter(t=>t.length>0).join(' ').replace(/\s+/g,' ').trim().slice(0,300);
+        // 3. Workbook sheet names (often meaningful: "Labor Report", "Claims Jun 2025")
+        const wbEntry=zip.files['xl/workbook.xml']||zip.files['xl/Workbook.xml'];
+        if(wbEntry){
+          const xml=await wbEntry.async('string');
+          const sheetNames=(xml.match(/name="([^"]{1,60})"/g)||[])
+            .map(n=>n.replace(/name="|"/g,'').trim())
+            .filter(n=>n&&!/^Sheet\d*$/i.test(n)&&n.length>1);
+          collected.unshift(...sheetNames);
+        }
+        // 4. Core properties (title, subject)
+        const coreEntry=zip.files['docProps/core.xml'];
+        if(coreEntry){
+          const xml=await coreEntry.async('string');
+          const title=(xml.match(/<dc:title>([^<]+)<\/dc:title>/)||[])[1];
+          const subject=(xml.match(/<dc:subject>([^<]+)<\/dc:subject>/)||[])[1];
+          if(title) collected.unshift(`Title:${title.trim()}`);
+          if(subject) collected.unshift(`Subject:${subject.trim()}`);
+        }
+        const deduped=[...new Set(collected)].filter(t=>t&&t.length>0);
+        const text=deduped.join(' ').replace(/\s+/g,' ').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,'').trim().slice(0,300);
         if(text.length>10) parts.push(`Content:${text}`);
       }catch{}
     }
