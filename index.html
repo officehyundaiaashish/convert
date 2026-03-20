@@ -1536,7 +1536,9 @@ async function callGemini(key, model, messages, maxTokens){
     return {role, parts};
   });
 
-  const body={contents, generationConfig:{maxOutputTokens:maxTokens, temperature:0.15}};
+  // Force JSON output — prevents Gemini from adding description text around JSON
+  const hasVision=msgs.some(m=>Array.isArray(m.content)&&m.content.some(p=>p.type==='image_url'));
+  const body={contents, generationConfig:{maxOutputTokens:maxTokens, temperature:0.15, ...(hasVision?{responseMimeType:'application/json'}:{})}};
   if(sys) body.systemInstruction={parts:[{text: typeof sys.content==='string'?sys.content:JSON.stringify(sys.content)}]};
   try{
     const url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
@@ -1762,12 +1764,18 @@ async function extractFileContext(file, useVision=false){
 
 // ─── Robust JSON extraction ───
 function extractJSON(text){
+  // Strip markdown fences + anything before first {
   text = text.replace(/```json\s*/gi,'').replace(/```\s*/gi,'').trim();
+  // Remove preamble text before JSON (common in Gemini vision responses)
+  const firstBrace = text.indexOf('{');
+  if(firstBrace > 0) text = text.slice(firstBrace);
+
+  // Direct parse
   try{ return JSON.parse(text); }catch(_){}
-  const start = text.indexOf('{');
-  if(start === -1) return null;
+
+  // Brace-tracked extraction
   let depth=0, inStr=false, esc=false, end=-1;
-  for(let i=start; i<text.length; i++){
+  for(let i=0; i<text.length; i++){
     const ch=text[i];
     if(esc){esc=false;continue;}
     if(ch==='\\' && inStr){esc=true;continue;}
@@ -1776,13 +1784,23 @@ function extractJSON(text){
     if(ch==='{')depth++;
     else if(ch==='}'){depth--;if(depth===0){end=i;break;}}
   }
-  if(end===-1){
-    let healed=text.slice(start);
-    const lastGood=Math.max(healed.lastIndexOf('},'),healed.lastIndexOf('"}'));
-    if(lastGood>0){healed=healed.slice(0,lastGood+1)+'\n}';try{return JSON.parse(healed);}catch(_){}}
-    return null;
+  if(end !== -1){
+    const candidate = text.slice(0, end+1);
+    try{ return JSON.parse(candidate); }catch(_){}
+    // Fix trailing commas + literal newlines inside strings
+    try{
+      return JSON.parse(candidate
+        .replace(/,\s*([}\]])/g,'$1')
+        .replace(/([^\\])\n/g,'$1 ')
+        .replace(/\t/g,' '));
+    }catch(_){}
   }
-  try{return JSON.parse(text.slice(start,end+1));}catch(_){return null;}
+  // Truncated — heal
+  const lastGood=Math.max(text.lastIndexOf('},'),text.lastIndexOf('"}'));
+  if(lastGood>0){
+    try{return JSON.parse(text.slice(0,lastGood+1)+'\n}');}catch(_){}
+  }
+  return null;
 }
 
 // ─── Call AI ───
