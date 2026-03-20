@@ -1723,105 +1723,173 @@ async function extractFileContext(file, useVision=false){
       if(list) parts.push(`Contains:${list}`);
     }
     else if(ext==='docx'){
+      // always try raw binary first — works for real docx AND fake stubs
+      const collected=[];
       try{
         const zip=await JSZip.loadAsync(file);
-        // Priority: document.xml first, then all other word/ xmls
-        const allWordKeys=Object.keys(zip.files).filter(k=>k.startsWith('word/')&&k.endsWith('.xml'));
-        const xmlKeys=['word/document.xml',...allWordKeys.filter(k=>k!=='word/document.xml')];
-        const collected=[];
-        for(const key of xmlKeys.slice(0,10)){
-          const entry=zip.files[key];
-          if(!entry||entry.dir) continue;
-          let xml='';
-          try{ xml=await entry.async('string'); }catch{ continue; }
-          if(!xml||xml.length<20) continue;
-          // Strategy 1: standard w:t text runs (works for most docx)
+        // Pass A: w:t XML runs across all word/ xml files
+        const allWK=Object.keys(zip.files).filter(k=>
+          (k.startsWith('word/')||k.startsWith('Word/'))&&k.endsWith('.xml')&&!zip.files[k].dir);
+        const xmlKeys=['word/document.xml','Word/document.xml',
+          ...allWK.filter(k=>!/document\.xml$/i.test(k))];
+        for(const key of xmlKeys.slice(0,12)){
+          const entry=zip.files[key]; if(!entry) continue;
+          let xml=''; try{xml=await entry.async('string');}catch{continue;}
+          if(!xml||xml.length<30) continue;
           const wt=(xml.match(/<w:t(?:\s[^>]*)?>([^<]{1,300})<\/w:t>/g)||[])
             .map(t=>t.replace(/<[^>]+>/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim())
             .filter(t=>t.length>1&&/[a-zA-Z0-9]/.test(t));
-          if(wt.length){ collected.push(...wt.slice(0,80)); break; }
-          // Strategy 2: strip all tags, take raw text (fallback for non-standard)
-          const plain=xml.replace(/<[^>]+>/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/\s+/g,' ').trim();
-          const meaningful=plain.replace(/[^\x20-\x7E\u00A0-\uFFFF]/g,'').trim();
-          if(meaningful.length>20){ collected.push(meaningful.slice(0,300)); break; }
+          if(wt.length){collected.push(...wt.slice(0,100));break;}
+          const plain=xml.replace(/<[^>]+>/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<')
+            .replace(/&gt;/g,'>').replace(/\s+/g,' ').trim();
+          const words=plain.replace(/[^\x20-\x7E\u00A0-\uFFFF]/g,'').trim();
+          if(words.length>30){collected.push(words.slice(0,300));break;}
         }
-        // Also grab document properties (app.xml, core.xml) for title/subject
-        for(const propKey of ['docProps/core.xml','docProps/app.xml']){
-          const entry=zip.files[propKey];
-          if(!entry) continue;
+        // Pass B: docProps title/subject
+        for(const pk of ['docProps/core.xml','docProps/app.xml']){
+          const e=zip.files[pk]; if(!e) continue;
           try{
-            const xml=await entry.async('string');
-            const title=(xml.match(/<dc:title>([^<]+)<\/dc:title>/)||[])[1];
-            const subject=(xml.match(/<dc:subject>([^<]+)<\/dc:subject>/)||[])[1];
-            const appName=(xml.match(/<vt:lpstr>([^<]{2,60})<\/vt:lpstr>/)||[])[1];
-            if(title) collected.unshift(`Title:${title.trim()}`);
-            if(subject) collected.unshift(`Subject:${subject.trim()}`);
-            if(appName&&!/Microsoft|Word|Excel/i.test(appName)) collected.push(appName.trim());
+            const x=await e.async('string');
+            const title=(x.match(/<dc:title>([^<]+)<\/dc:title>/)||[])[1];
+            const subj=(x.match(/<dc:subject>([^<]+)<\/dc:subject>/)||[])[1];
+            if(title) collected.unshift('Title:'+title.trim().slice(0,60));
+            if(subj) collected.unshift('Subject:'+subj.trim().slice(0,60));
           }catch{}
         }
-        const text=collected.join(' ').replace(/\s+/g,' ').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,'').trim().slice(0,300);
-        if(text.length>10) parts.push(`Content:${text}`);
       }catch{}
+      // Pass C: raw binary scrape — catches fake stubs, encrypted, non-standard
+      if(collected.length===0){
+        try{
+          const buf=await file.arrayBuffer();
+          const bytes=new Uint8Array(buf);
+          // extract ASCII runs ≥4 chars
+          let run='',runs=[];
+          for(let i=0;i<Math.min(bytes.length,200000);i++){
+            const b=bytes[i];
+            if(b>=32&&b<127){run+=String.fromCharCode(b);}
+            else{if(run.length>=4)runs.push(run);run='';}
+          }
+          if(run.length>=4) runs.push(run);
+          // also scan UTF-16LE (Windows format)
+          try{
+            const u16=new TextDecoder('utf-16le').decode(buf.slice(0,Math.min(buf.byteLength,200000)));
+            let urun='',uruns=[];
+            for(const c of u16){
+              if(c>=' '&&c<'\x7f'){urun+=c;}
+              else{if(urun.length>=4)uruns.push(urun);urun='';}
+            }
+            if(urun.length>=4) uruns.push(urun);
+            runs.push(...uruns);
+          }catch{}
+          const noiseRe=/^(xml|http|rels|xmlns|schemas|office|microsoft|relationships|Content|Type|Override|Part)/i;
+          const textRuns=[...new Set(runs)]
+            .filter(r=>/[a-zA-Z]{3,}/.test(r)&&!noiseRe.test(r.trim()))
+            .map(r=>r.replace(/[<>{}\\\/\[\]]/g,' ').replace(/\s+/g,' ').trim())
+            .filter(r=>r.length>3);
+          if(textRuns.length) collected.push(textRuns.join(' ').slice(0,300));
+        }catch{}
+      }
+      const text=collected.join(' ').replace(/\s+/g,' ')
+        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,'').trim().slice(0,300);
+      if(text.length>10) parts.push('Content:'+text);
     }
     else if(ext==='xlsx'){
+      const collected=[];
       try{
         const zip=await JSZip.loadAsync(file);
-        const collected=[];
-        // 1. Shared strings — try both casings, parse all <t> variants
-        const ssEntry=zip.files['xl/sharedStrings.xml']||zip.files['xl/SharedStrings.xml']
-          ||Object.values(zip.files).find(f=>f.name.toLowerCase()==='xl/sharedstrings.xml');
-        if(ssEntry){
-          const xml=await ssEntry.async('string');
-          const tokens=(xml.match(/<t(?:\s[^>]*)?>([^<]+)<\/t>/g)||[])
-            .map(t=>t.replace(/<[^>]+>/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').trim())
-            .filter(t=>t.length>0&&t.length<200&&/[a-zA-Z]/.test(t));
-          collected.push(...tokens.slice(0,120));
+        // Pass A: workbook sheet names — always present, very informative
+        const wbE=zip.files['xl/workbook.xml']||zip.files['xl/Workbook.xml']||
+          Object.values(zip.files).find(f=>f.name.toLowerCase()==='xl/workbook.xml');
+        if(wbE){
+          try{
+            const x=await wbE.async('string');
+            const names=(x.match(/name="([^"]{1,80})"/g)||[])
+              .map(n=>n.replace(/name="|"/g,'').trim())
+              .filter(n=>n&&!/^Sheet\d*$/i.test(n)&&n.length>1&&n.length<60);
+            collected.unshift(...names);
+          }catch{}
         }
-        // 2. Sheet XML — inline strings, string-typed cells, short values
-        const sheetKeys=Object.keys(zip.files).filter(k=>/xl[/\\]worksheets[/\\]sheet\d+\.xml/i.test(k));
-        for(const sk of sheetKeys.slice(0,6)){
-          const entry=zip.files[sk];
-          if(!entry||entry.dir) continue;
-          let xml=''; try{ xml=await entry.async('string'); }catch{ continue; }
-          // Inline strings <is><t>text</t></is>
-          const inlineStr=(xml.match(/<is>[\s\S]*?<\/is>/g)||[])
+        // Pass B: shared strings (case-insensitive path lookup)
+        const ssE=zip.files['xl/sharedStrings.xml']||zip.files['xl/SharedStrings.xml']||
+          Object.values(zip.files).find(f=>f.name.toLowerCase().includes('sharedstrings'));
+        if(ssE){
+          try{
+            const xml=await ssE.async('string');
+            const tokens=(xml.match(/<t(?:\s[^>]*)?>([^<]+)<\/t>/g)||[])
+              .map(t=>t.replace(/<[^>]+>/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').trim())
+              .filter(t=>t.length>0&&t.length<200&&/[a-zA-Z]/.test(t));
+            collected.push(...tokens.slice(0,150));
+          }catch{}
+        }
+        // Pass C: all sheet XML — inline strings + str-typed cells + short values
+        const sheetKeys=Object.keys(zip.files).filter(k=>
+          /xl[/\\]worksheets[/\\]sheet\d+\.xml/i.test(k)&&!zip.files[k].dir);
+        for(const sk of sheetKeys.slice(0,8)){
+          const e=zip.files[sk]; if(!e) continue;
+          let xml=''; try{xml=await e.async('string');}catch{continue;}
+          (xml.match(/<is>[\s\S]*?<\/is>/g)||[])
             .map(s=>s.replace(/<[^>]+>/g,' ').replace(/&amp;/g,'&').replace(/\s+/g,' ').trim())
-            .filter(s=>s.length>1&&/[a-zA-Z]/.test(s));
-          collected.push(...inlineStr);
-          // String-typed cells <c t="str"> or <c t="inlineStr">
-          const strCells=(xml.match(/<c[^>]+t="(?:str|inlineStr)"[^>]*>[\s\S]*?<\/c>/g)||[])
-            .map(c=>{ const m=c.match(/<v>([^<]*)<\/v>/); return m?m[1].replace(/&amp;/g,'&').trim():''; })
-            .filter(v=>v.length>1&&v.length<200&&/[a-zA-Z]/.test(v));
-          collected.push(...strCells);
-          // All short <v> values — skip long numbers (dates as serials, large IDs)
-          const vals=(xml.match(/<v>([^<]{1,60})<\/v>/g)||[])
+            .filter(s=>s.length>1&&/[a-zA-Z]/.test(s))
+            .forEach(s=>collected.push(s));
+          (xml.match(/<c[^>]+t="(?:str|inlineStr)"[^>]*>[\s\S]*?<\/c>/g)||[])
+            .map(c=>{const m=c.match(/<v>([^<]*)<\/v>/);return m?m[1].replace(/&amp;/g,'&').trim():''})
+            .filter(v=>v.length>1&&v.length<200&&/[a-zA-Z]/.test(v))
+            .forEach(v=>collected.push(v));
+          (xml.match(/<v>([^<]{1,60})<\/v>/g)||[])
             .map(v=>v.replace(/<[^>]+>/g,'').trim())
-            .filter(v=>v.length>0&&v.length<60&&!/^\d{5,}(\.\d+)?$/.test(v)&&!/^4[0-9]{4}\d/.test(v)&&/[a-zA-Z]/.test(v));
-          collected.push(...vals);
-          if(collected.length>200) break;
+            .filter(v=>v.length>0&&v.length<60&&!/^\d{5,}(\.\d+)?$/.test(v)&&/[a-zA-Z]/.test(v))
+            .forEach(v=>collected.push(v));
+          if(collected.length>250) break;
         }
-        // 3. Workbook sheet names (often meaningful: "Labor Report", "Claims Jun 2025")
-        const wbEntry=zip.files['xl/workbook.xml']||zip.files['xl/Workbook.xml'];
-        if(wbEntry){
-          const xml=await wbEntry.async('string');
-          const sheetNames=(xml.match(/name="([^"]{1,60})"/g)||[])
-            .map(n=>n.replace(/name="|"/g,'').trim())
-            .filter(n=>n&&!/^Sheet\d*$/i.test(n)&&n.length>1);
-          collected.unshift(...sheetNames);
+        // Pass D: docProps
+        for(const pk of ['docProps/core.xml','docProps/app.xml']){
+          const e=zip.files[pk]; if(!e) continue;
+          try{
+            const x=await e.async('string');
+            const title=(x.match(/<dc:title>([^<]+)<\/dc:title>/)||[])[1];
+            const subj=(x.match(/<dc:subject>([^<]+)<\/dc:subject>/)||[])[1];
+            if(title) collected.unshift('Title:'+title.trim().slice(0,60));
+            if(subj) collected.unshift('Subject:'+subj.trim().slice(0,60));
+          }catch{}
         }
-        // 4. Core properties (title, subject)
-        const coreEntry=zip.files['docProps/core.xml'];
-        if(coreEntry){
-          const xml=await coreEntry.async('string');
-          const title=(xml.match(/<dc:title>([^<]+)<\/dc:title>/)||[])[1];
-          const subject=(xml.match(/<dc:subject>([^<]+)<\/dc:subject>/)||[])[1];
-          if(title) collected.unshift(`Title:${title.trim()}`);
-          if(subject) collected.unshift(`Subject:${subject.trim()}`);
-        }
-        const deduped=[...new Set(collected)].filter(t=>t&&t.length>0);
-        const text=deduped.join(' ').replace(/\s+/g,' ').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,'').trim().slice(0,300);
-        if(text.length>10) parts.push(`Content:${text}`);
       }catch{}
+      // Pass E: raw binary scrape — catches fake stubs + files with no shared strings
+      if(collected.length===0){
+        try{
+          const buf=await file.arrayBuffer();
+          const bytes=new Uint8Array(buf);
+          let run='',runs=[];
+          for(let i=0;i<Math.min(bytes.length,300000);i++){
+            const b=bytes[i];
+            if(b>=32&&b<127){run+=String.fromCharCode(b);}
+            else{if(run.length>=4)runs.push(run);run='';}
+          }
+          if(run.length>=4) runs.push(run);
+          // UTF-16LE scan too
+          try{
+            const u16=new TextDecoder('utf-16le').decode(buf.slice(0,Math.min(buf.byteLength,300000)));
+            let urun='',uruns=[];
+            for(const c of u16){
+              if(c>=' '&&c<'\x7f'){urun+=c;}
+              else{if(urun.length>=4)uruns.push(urun);urun='';}
+            }
+            if(urun.length>=4) uruns.push(urun);
+            runs.push(...uruns);
+          }catch{}
+          const noiseRe=/^(xml|http|rels|xmlns|schemas|office|microsoft|relationships|Content|Type|Override|Part|_xlnm)/i;
+          const textRuns=[...new Set(runs)]
+            .filter(r=>/[a-zA-Z]{3,}/.test(r)&&!noiseRe.test(r.trim()))
+            .map(r=>r.replace(/[<>{}\\\/\[\]]/g,' ').replace(/\s+/g,' ').trim())
+            .filter(r=>r.length>3);
+          if(textRuns.length) collected.push(textRuns.join(' ').slice(0,300));
+        }catch{}
+      }
+      // clean noise tokens before output
+      const clean=[...new Set(collected)]
+        .filter(t=>t&&t.length>0&&!/^(_xlnm\.|FilterDatabase|Print_Area|microsoft\.com:)/i.test(t));
+      const text=clean.join(' ').replace(/\s+/g,' ')
+        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,'').trim().slice(0,300);
+      if(text.length>10) parts.push('Content:'+text);
     }
   }catch(e){}
 
@@ -1985,8 +2053,11 @@ async function organiseFiles(){
         const ctx=await extractFileContext(file,useVision);
         if(ctx){
           const vm=ctx.match(/__VISION__([A-Za-z0-9+/=]+)/);
-          if(vm){ visionData[fn]=vm[1]; fileContext[fn]=ctx.replace(/__VISION__[A-Za-z0-9+/=]+/,'').trim().replace(/\s*\|\s*$/,'').trim(); }
-          else fileContext[fn]=ctx;
+          const cleanCtx=s=>s.replace(/_xlnm\.\S+/g,'').replace(/microsoft\.com:\S+/g,'')
+            .replace(/\b(xmlns|rels|schemas|relationships|officeDocument|spreadsheetml|drawingml)\S*/gi,'')
+            .replace(/\s+/g,' ').trim();
+          if(vm){ visionData[fn]=vm[1]; fileContext[fn]=cleanCtx(ctx.replace(/__VISION__[A-Za-z0-9+/=]+/,'').trim().replace(/\s*\|\s*$/,'').trim()); }
+          else fileContext[fn]=cleanCtx(ctx);
         }
         if(++done%10===0) setStatus(`Reading contents... ${done}/${total}`);
       }));
