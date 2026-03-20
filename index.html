@@ -2720,17 +2720,30 @@ function generateManifest(){
     name: "FolderMind — AI File Organiser",
     short_name: "FolderMind",
     description: "AI-powered file organizer - Organize your files intelligently with AI",
-    start_url: window.location.href.split('?')[0],
+    start_url: "./",
+    scope: "./",
     display: "standalone",
     background_color: "#f7f7f5",
     theme_color: "#f7f7f5",
     orientation: "any",
     icons: [
       {
-        src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230fa968'/%3E%3Cpath d='M25 35c0-2.2 1.8-4 4-4h14l4 4h24c2.2 0 4 1.8 4 4v26c0 2.2-1.8 4-4 4H29c-2.2 0-4-1.8-4-4z' fill='white' stroke='white' stroke-width='2'/%3E%3C/svg%3E",
-        sizes: "any",
+        src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='38' fill='%230fa968'/%3E%3Cpath d='M48 67c0-4.2 3.5-7.7 7.7-7.7h26.9l7.7 7.7h46.1c4.2 0 7.7 3.5 7.7 7.7v50c0 4.2-3.5 7.7-7.7 7.7H55.7c-4.2 0-7.7-3.5-7.7-7.7z' fill='white' stroke='white' stroke-width='3.8'/%3E%3C/svg%3E",
+        sizes: "192x192",
         type: "image/svg+xml",
-        purpose: "any maskable"
+        purpose: "any"
+      },
+      {
+        src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='102' fill='%230fa968'/%3E%3Cpath d='M128 179c0-11.2 9.3-20.5 20.5-20.5h71.8l20.5 20.5h123c11.2 0 20.5 9.3 20.5 20.5v133c0 11.2-9.3 20.5-20.5 20.5H148.5c-11.2 0-20.5-9.3-20.5-20.5z' fill='white' stroke='white' stroke-width='10'/%3E%3C/svg%3E",
+        sizes: "512x512",
+        type: "image/svg+xml",
+        purpose: "any"
+      },
+      {
+        src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='102' fill='%230fa968'/%3E%3Cpath d='M128 179c0-11.2 9.3-20.5 20.5-20.5h71.8l20.5 20.5h123c11.2 0 20.5 9.3 20.5 20.5v133c0 11.2-9.3 20.5-20.5 20.5H148.5c-11.2 0-20.5-9.3-20.5-20.5z' fill='white' stroke='white' stroke-width='10'/%3E%3C/svg%3E",
+        sizes: "512x512",
+        type: "image/svg+xml",
+        purpose: "maskable"
       }
     ]
   };
@@ -2762,22 +2775,34 @@ function registerServiceWorker(){
   if('serviceWorker' in navigator){
     const blob = new Blob([swCode], {type: 'application/javascript'});
     const swUrl = URL.createObjectURL(blob);
-    navigator.serviceWorker.register(swUrl)
-      .then(reg => console.log('FolderMind SW: Registered'))
+    navigator.serviceWorker.register(swUrl, { scope: './' })
+      .then(reg => console.log('FolderMind SW: Registered', reg))
       .catch(err => console.log('FolderMind SW: Registration failed', err));
   }
 }
 
 // PWA Install prompt
 let deferredPrompt;
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  deferredPrompt = e;
-  document.getElementById('installBtn').classList.add('show');
-});
+
+// Check if already installed (running in standalone mode)
+if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true){
+  // Already installed, keep button hidden
+  console.log('FolderMind: Already installed');
+} else {
+  // Not installed, listen for install prompt
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    document.getElementById('installBtn').classList.add('show');
+    console.log('FolderMind: Install prompt available');
+  });
+}
 
 function installPWA(){
-  if(!deferredPrompt) return;
+  if(!deferredPrompt) {
+    console.log('FolderMind: No install prompt available');
+    return;
+  }
   deferredPrompt.prompt();
   deferredPrompt.userChoice.then((choice) => {
     if(choice.outcome === 'accepted'){
