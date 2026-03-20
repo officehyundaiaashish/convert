@@ -2130,7 +2130,7 @@ async function organiseFiles(){
       const base=f.split('/').pop();
       const file=origFileMap[f];
       const date=file?.lastModified?` [${fmtDate(file.lastModified)}]`:'';
-      const ctx=fileContext[f]?` | ${fileContext[f]}`:'';
+      const ctx=isExp&&fileContext[f]?` | ${fileContext[f]}`:''; // experimental only
       return base+date+ctx;
     }).join('\n');
 
@@ -2141,8 +2141,8 @@ async function organiseFiles(){
       userInstr ? userInstr : 'No specific instruction — organise intelligently using file names, types, and dates.',
       '</user_task>',
       `<summary>Total: ${total} files | Types: ${typeHint}</summary>`,
-      isExp ? '<note>File contents are provided in the file list — use them to understand each file.</note>' : '',
-      visionItems.length ? `<note>Image thumbnails attached for: ${visionItems.map(f=>f.split('/').pop()).join(', ')}</note>` : '',
+      isExp ? '<note>File contents are included in the file list below — use them to understand and name each file accurately.</note>' : '',
+      isExp && visionItems.length ? `<note>Image thumbnails attached for: ${visionItems.map(f=>f.split('/').pop()).join(', ')}</note>` : '',
       '<files>',
       fileListStr,
       '</files>',
@@ -2673,26 +2673,28 @@ async function generateDebugLog(){
     }
   }
 
-  // Build the exact file list string as organiseFiles does
+  // Build the exact file list string — mirrors organiseFiles exactly
   const fileListStr=fileNames.map(f=>{
     const base=f.split('/').pop();
     const file=origFileMap[f];
     const date=file?.lastModified?` [${fmtDate(file.lastModified)}]`:'';
-    const ctx=fileContext[f]?` | ${fileContext[f]}`:'';
+    const ctx=isExp&&fileContext[f]?` | ${fileContext[f]}`:''; // experimental only — mirrors fix
     return base+date+ctx;
   }).join('\n');
 
   const visionItems=fileNames.filter(f=>visionData[f]);
 
   const userMsg=[
-    userInstr
-      ? `YOUR PRIMARY TASK — follow this EXACTLY, it overrides everything else:\n${userInstr}`
-      : 'Organise these files into logical folders with clean names.',
-    `File types: ${typeHint}`,
-    isExp?'File content is provided below — use it to understand each file and rename intelligently.':'',
-    visionItems.length?`Image thumbnails included for: ${visionItems.map(f=>f.split('/').pop()).join(', ')}`:'',
-    `\nUse exact filename (without brackets) as the JSON key.`,
-    '\nFiles:', fileListStr
+    '<user_task>',
+    userInstr ? userInstr : 'No specific instruction — organise intelligently using file names, types, and dates.',
+    '</user_task>',
+    `<summary>Total: ${total} files | Types: ${typeHint}</summary>`,
+    isExp ? '<note>File contents are included in the file list below — use them to understand and name each file accurately.</note>' : '',
+    isExp && visionItems.length ? `<note>Image thumbnails attached for: ${visionItems.map(f=>f.split('/').pop()).join(', ')}</note>` : '',
+    '<files>',
+    fileListStr,
+    '</files>',
+    '<reminder>Output JSON only. Every file in <files> must appear. Use exact original filename as JSON key (no brackets).</reminder>'
   ].filter(Boolean).join('\n');
 
   const systemPrompt=buildSystem();
