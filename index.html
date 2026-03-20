@@ -1181,12 +1181,15 @@ function formatSize(b){
 
 function handleFiles(files){
   if(!files.length)return;
-  // Accept ALL file types including shortcuts (.lnk), icons (.ico), empty files
-  // Only skip macOS hidden system files like .DS_Store and __MACOSX
   const filtered = files.filter(f => {
-    const name = f.name;
-    if(name === '.DS_Store' || name === 'Thumbs.db' || name.startsWith('__MACOSX')) return false;
-    return true; // keep everything else including size=0 shortcuts
+    const path = f.webkitRelativePath || f.name;
+    // Skip macOS/Windows system files
+    if(f.name === '.DS_Store' || f.name === 'Thumbs.db' || f.name.startsWith('__MACOSX')) return false;
+    // Skip hidden folders (.git, .svn, .hg, node_modules, etc.)
+    const parts = path.split('/');
+    if(parts.some(p => p.startsWith('.') && p.length > 1)) return false; // any hidden folder/file
+    if(parts.includes('node_modules')) return false;
+    return true;
   });
   selectedFiles = [...selectedFiles, ...filtered];
   // Dedupe by path+name
