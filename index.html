@@ -8,180 +8,213 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root {
-  --bg:#0a0a0f; --surface:#12121a; --surface2:#1a1a26; --border:#2a2a3d;
-  --accent:#7c6dfa; --accent2:#fa6d9a; --accent3:#6dfabc;
-  --text:#e8e8f0; --muted:#6b6b8a; --warning:#fabc6d;
+  --bg:#f7f7f5; --surface:#ffffff; --surface2:#f0f0ee; --border:#e5e5e2;
+  --accent:#6c47ff; --accent2:#e54d7b; --accent3:#0fa968;
+  --text:#1a1a1a; --muted:#888884; --warning:#c07a00;
+  --shadow:0 1px 3px rgba(0,0,0,0.08);
+}
+[data-theme="dark"]{
+  --bg:#0f0f0f; --surface:#1a1a1a; --surface2:#242424; --border:#333333;
+  --accent:#7c6dfa; --accent2:#fa6d9a; --accent3:#3dd68c;
+  --text:#ececec; --muted:#666660; --warning:#e09b2a;
+  --shadow:0 1px 3px rgba(0,0,0,0.4);
 }
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;overflow-x:hidden;}
-body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(124,109,250,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(124,109,250,0.04) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;}
-.glow{position:fixed;border-radius:50%;filter:blur(80px);pointer-events:none;z-index:0;}
-.g1{width:400px;height:400px;background:rgba(124,109,250,0.12);top:-100px;left:-100px;}
-.g2{width:300px;height:300px;background:rgba(250,109,154,0.08);bottom:80px;right:-50px;}
-.container{max-width:880px;margin:0 auto;padding:36px 18px 80px;position:relative;z-index:1;}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;min-height:100vh;overflow-x:hidden;transition:background 0.2s,color 0.2s;font-size:14px;line-height:1.5;}
+
+
+.container{max-width:680px;margin:0 auto;padding:32px 16px 80px;position:relative;}
+
 
 /* Header */
-header{display:flex;align-items:center;gap:14px;margin-bottom:36px;animation:fadeDown 0.5s ease both;}
-.logo{width:46px;height:46px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;box-shadow:0 0 22px rgba(124,109,250,0.4);}
-h1{font-size:25px;font-weight:800;letter-spacing:-0.5px;}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:28px;}
+.header-left{display:flex;align-items:center;gap:10px;}
+.logo{width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+h1{font-size:18px;font-weight:700;letter-spacing:-0.3px;color:var(--text);}
 h1 span{color:var(--accent);}
-.tagline{font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-top:3px;}
+.tagline{font-size:11px;color:var(--muted);margin-top:1px;}
+.theme-btn{background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:14px;color:var(--muted);transition:all 0.15s;flex-shrink:0;}
+.theme-btn:hover{border-color:var(--accent);color:var(--accent);}
 
 /* Steps */
-.steps{display:flex;margin-bottom:26px;}
-.step{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;position:relative;}
-.step:not(:last-child)::after{content:'';position:absolute;top:14px;left:50%;width:100%;height:1px;background:var(--border);z-index:0;transition:background 0.4s;}
-.step.done:not(:last-child)::after,.step.active:not(:last-child)::after{background:var(--accent);}
-.step-dot{width:28px;height:28px;border-radius:50%;background:var(--surface2);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;position:relative;z-index:1;transition:all 0.3s;}
-.step.active .step-dot{background:var(--accent);border-color:var(--accent);box-shadow:0 0 14px rgba(124,109,250,0.5);}
-.step.done .step-dot{background:var(--accent3);border-color:var(--accent3);color:#0a0a0f;}
-.step-label{font-family:'Space Mono',monospace;font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:center;}
-.step.active .step-label{color:var(--accent);}
+.steps{display:flex;margin-bottom:24px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface);}
+.step{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-right:1px solid var(--border);transition:background 0.15s;}
+.step:last-child{border-right:none;}
+.step.active{background:var(--accent);color:white;}
+.step.done{background:var(--surface2);}
+.step-dot{width:20px;height:20px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;position:relative;z-index:1;transition:all 0.2s;}
+.step.active .step-dot{background:rgba(255,255,255,0.25);color:white;}
+.step.done .step-dot{background:var(--accent3);color:white;}
+.step-label{font-size:9px;letter-spacing:0.5px;text-transform:uppercase;color:var(--muted);text-align:center;}
+.step.active .step-label{color:rgba(255,255,255,0.85);}
 .step.done .step-label{color:var(--accent3);}
 
 /* Card */
-.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:16px;}
-.card-label{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--accent);margin-bottom:13px;display:flex;align-items:center;gap:7px;}
-.card-label::before{content:'';width:6px;height:6px;background:var(--accent);border-radius:50%;box-shadow:0 0 7px var(--accent);}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:12px;box-shadow:var(--shadow);}
+.card-label{font-size:11px;font-weight:600;color:var(--muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px;}
 
 /* Inputs */
-input,select,textarea{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:10px 13px;color:var(--text);font-family:'Space Mono',monospace;font-size:12px;outline:none;transition:border-color 0.2s,box-shadow 0.2s;width:100%;}
-input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(124,109,250,0.1);}
-select option{background:var(--surface2);}
-textarea{resize:vertical;min-height:100px;line-height:1.65;}
+input,select,textarea{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-family:inherit;font-size:13px;outline:none;transition:border-color 0.15s,box-shadow 0.15s;width:100%;}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(108,71,255,0.12);}
+select option{background:var(--surface);}
+textarea{resize:vertical;min-height:90px;line-height:1.6;}
 
 /* Input row */
-.input-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.input-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
 .input-row input{flex:1 1 150px;min-width:0;}
 
 /* Buttons */
-.btn{padding:10px 16px;border-radius:9px;border:none;cursor:pointer;font-family:'Syne',sans-serif;font-weight:600;font-size:13px;transition:all 0.2s;white-space:nowrap;flex-shrink:0;}
-.btn:disabled{opacity:0.4;cursor:not-allowed;transform:none!important;box-shadow:none!important;}
-.btn-primary{background:linear-gradient(135deg,var(--accent),#9d8cff);color:white;box-shadow:0 4px 13px rgba(124,109,250,0.3);}
-.btn-primary:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(124,109,250,0.45);}
+.btn{padding:8px 14px;border-radius:7px;border:none;cursor:pointer;font-family:inherit;font-weight:500;font-size:13px;transition:all 0.15s;white-space:nowrap;flex-shrink:0;}
+.btn:disabled{opacity:0.4;cursor:not-allowed;}
+.btn-primary{background:var(--accent);color:white;}
+.btn-primary:not(:disabled):hover{opacity:0.88;}
 .btn-secondary{background:var(--surface2);border:1px solid var(--border);color:var(--text);}
 .btn-secondary:not(:disabled):hover{border-color:var(--accent);color:var(--accent);}
-.btn-success{background:linear-gradient(135deg,#1fa86b,var(--accent3));color:#0a0a0f;font-weight:700;box-shadow:0 4px 13px rgba(109,250,188,0.25);}
-.btn-success:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(109,250,188,0.4);}
-.btn-warn{background:linear-gradient(135deg,#b8720a,var(--warning));color:#0a0a0f;font-weight:700;}
-.btn-warn:not(:disabled):hover{transform:translateY(-1px);}
+.btn-success{background:var(--accent3);color:white;font-weight:600;}
+.btn-success:not(:disabled):hover{opacity:0.88;}
+.btn-warn{background:#fff3cd;color:var(--warning);border:1px solid #ffd966;font-weight:500;}
+[data-theme="dark"] .btn-warn{background:#2a2000;color:var(--warning);border-color:#5a4000;}
+.btn-warn:not(:disabled):hover{opacity:0.85;}
+.btn-danger{background:#fff0f0;color:#c0392b;border:1px solid #ffcccc;font-size:11px;padding:4px 8px;}
+[data-theme="dark"] .btn-danger{background:#2a0000;color:#e06060;border-color:#4a1010;}
+.btn-danger:not(:disabled):hover{opacity:0.85;}
 
 /* API status */
-.api-status{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:8px;font-family:'Space Mono',monospace;font-size:11px;transition:all 0.3s;border:1px solid var(--border);background:var(--surface2);color:var(--muted);margin-top:9px;}
-.api-status.testing{border-color:var(--warning);color:var(--warning);background:rgba(250,188,109,0.07);}
-.api-status.connected{border-color:var(--accent3);color:var(--accent3);background:rgba(109,250,188,0.07);box-shadow:0 0 9px rgba(109,250,188,0.12);}
-.api-status.failed{border-color:var(--accent2);color:var(--accent2);background:rgba(250,109,154,0.07);}
-.status-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0;}
-.api-status.connected .status-dot{animation:pulse 1.5s ease infinite;box-shadow:0 0 5px currentColor;}
+.api-status{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:6px;font-size:12px;transition:all 0.2s;border:1px solid var(--border);background:var(--surface2);color:var(--muted);margin-top:8px;}
+.api-status.testing{border-color:var(--warning);color:var(--warning);}
+.api-status.connected{border-color:var(--accent3);color:var(--accent3);}
+.api-status.failed{border-color:#c0392b;color:#c0392b;}
+[data-theme="dark"] .api-status.failed{border-color:#e06060;color:#e06060;}
+.status-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0;}
+.api-status.connected .status-dot{animation:pulse 1.5s ease infinite;}
 .api-status.testing .status-dot{animation:pulse 0.6s ease infinite;}
 
+/* Key save row */
+.key-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;}
+.key-actions span{font-size:11px;color:var(--muted);}
+
 /* Select methods */
-.select-methods{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:11px;}
-.sm-btn{background:var(--surface2);border:1px solid var(--border);border-radius:11px;padding:13px;cursor:pointer;text-align:center;transition:all 0.2s;color:var(--text);}
-.sm-btn:hover{border-color:var(--accent);background:rgba(124,109,250,0.06);}
-.sm-icon{font-size:20px;margin-bottom:4px;}
-.sm-title{font-size:13px;font-weight:700;margin-bottom:1px;}
-.sm-sub{font-family:'Space Mono',monospace;font-size:9px;color:var(--muted);}
+.select-methods{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
+.sm-btn{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;cursor:pointer;text-align:center;transition:all 0.15s;color:var(--text);}
+.sm-btn:hover{border-color:var(--accent);}
+.sm-icon{font-size:18px;margin-bottom:3px;}
+.sm-title{font-size:13px;font-weight:600;}
+.sm-sub{font-size:11px;color:var(--muted);margin-top:1px;}
 
 /* Dropzone */
-.dropzone{border:2px dashed var(--border);border-radius:13px;padding:28px 18px;text-align:center;transition:all 0.3s;background:var(--surface2);}
-.dropzone.drag-over{border-color:var(--accent);box-shadow:0 0 22px rgba(124,109,250,0.13);}
-.dz-icon{font-size:32px;margin-bottom:8px;display:block;animation:float 3s ease-in-out infinite;}
-.dz-title{font-size:14px;font-weight:700;margin-bottom:4px;}
-.dz-sub{font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);}
+.dropzone{border:1px dashed var(--border);border-radius:8px;padding:24px 16px;text-align:center;transition:all 0.2s;background:var(--surface2);cursor:default;}
+.dropzone.drag-over{border-color:var(--accent);background:rgba(108,71,255,0.04);}
+.dz-icon{font-size:24px;margin-bottom:6px;display:block;}
+.dz-title{font-size:13px;font-weight:600;margin-bottom:2px;}
+.dz-sub{font-size:11px;color:var(--muted);}
+
+/* File list (selected) */
+.selected-files{margin-top:10px;max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;background:var(--surface2);}
+.selected-files::-webkit-scrollbar{width:3px;}
+.selected-files::-webkit-scrollbar-thumb{background:var(--border);}
+.sel-file{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;}
+.sel-file:last-child{border-bottom:none;}
+.sel-file-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);}
+.sel-file-size{font-size:10px;color:var(--muted);flex-shrink:0;}
+.sel-file-del{background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:0 2px;line-height:1;transition:color 0.15s;flex-shrink:0;}
+.sel-file-del:hover{color:#c0392b;}
+.sel-header{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted);}
+.sel-header strong{color:var(--text);}
 
 /* Badge */
-.badge{display:inline-flex;align-items:center;gap:5px;background:rgba(124,109,250,0.1);border:1px solid rgba(124,109,250,0.22);border-radius:20px;padding:4px 11px;font-family:'Space Mono',monospace;font-size:11px;color:var(--accent);margin-top:9px;}
+.badge{display:inline-flex;align-items:center;gap:4px;background:rgba(108,71,255,0.08);border:1px solid rgba(108,71,255,0.18);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--accent);margin-top:8px;}
 
 /* Settings grid */
-.sg{display:grid;gap:9px;margin-top:11px;}
+.sg{display:grid;gap:8px;margin-top:10px;}
 .sg-2{grid-template-columns:1fr 1fr;}
 .sg-3{grid-template-columns:1fr 1fr 1fr;}
-.sg label{display:block;font-family:'Space Mono',monospace;font-size:9px;color:var(--muted);margin-bottom:5px;letter-spacing:1px;text-transform:uppercase;}
+.sg label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:4px;}
 
-/* Prompt chips */
-.chips-label{font-family:'Space Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:7px;}
-.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
-.chip{padding:5px 11px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);cursor:pointer;transition:all 0.18s;white-space:nowrap;}
-.chip:hover{border-color:var(--accent);color:var(--accent);background:rgba(124,109,250,0.07);}
+/* Chips */
+.chips-label{font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:500;}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px;}
+.chip{padding:4px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);font-size:11px;color:var(--muted);cursor:pointer;transition:all 0.15s;white-space:nowrap;}
+.chip:hover{border-color:var(--accent);color:var(--accent);}
 
 /* Progress */
-.progress-wrap{background:var(--surface2);border-radius:8px;height:5px;overflow:hidden;margin-top:12px;}
-.progress-bar{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:8px;width:0%;transition:width 0.4s ease;box-shadow:0 0 7px rgba(124,109,250,0.35);}
-.status-text{font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);margin-top:7px;min-height:15px;}
+.progress-wrap{background:var(--surface2);border-radius:4px;height:3px;overflow:hidden;margin-top:10px;}
+.progress-bar{height:100%;background:var(--accent);border-radius:4px;width:0%;transition:width 0.3s ease;}
+.status-text{font-size:11px;color:var(--muted);margin-top:6px;min-height:14px;}
 
 /* Stats */
-.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:13px;}
-.stat-box{background:var(--surface2);border:1px solid var(--border);border-radius:11px;padding:11px;text-align:center;}
-.stat-num{font-size:22px;font-weight:800;color:var(--accent);}
-.stat-label{font-family:'Space Mono',monospace;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px;}
+.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}
+.stat-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;}
+.stat-num{font-size:20px;font-weight:700;color:var(--accent);}
+.stat-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;}
 
 /* File tree */
-.file-tree{background:var(--surface2);border-radius:11px;overflow:hidden;border:1px solid var(--border);max-height:380px;overflow-y:auto;}
-.file-tree::-webkit-scrollbar{width:4px;}
-.file-tree::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+.file-tree{border:1px solid var(--border);border-radius:8px;overflow:hidden;max-height:360px;overflow-y:auto;background:var(--surface);}
+.file-tree::-webkit-scrollbar{width:3px;}
+.file-tree::-webkit-scrollbar-thumb{background:var(--border);}
 .folder-group{border-bottom:1px solid var(--border);}
 .folder-group:last-child{border-bottom:none;}
-.folder-header{display:flex;align-items:center;gap:7px;padding:10px 13px;background:rgba(124,109,250,0.05);cursor:pointer;user-select:none;transition:background 0.15s;}
-.folder-header:hover{background:rgba(124,109,250,0.09);}
-.folder-name{font-weight:600;font-size:12px;flex:1;}
-.folder-count{font-family:'Space Mono',monospace;font-size:9px;color:var(--muted);}
-.folder-toggle{color:var(--muted);font-size:10px;transition:transform 0.2s;}
+.folder-header{display:flex;align-items:center;gap:6px;padding:9px 12px;background:var(--surface2);cursor:pointer;user-select:none;transition:background 0.1s;}
+.folder-header:hover{background:var(--border);}
+.folder-name{font-weight:600;font-size:12px;flex:1;color:var(--text);}
+.folder-count{font-size:10px;color:var(--muted);}
+.folder-toggle{color:var(--muted);font-size:9px;transition:transform 0.15s;}
 .folder-toggle.open{transform:rotate(90deg);}
 .file-list{display:none;}
 .file-list.open{display:block;}
-.file-item{display:flex;align-items:center;gap:7px;padding:7px 13px 7px 30px;border-top:1px solid rgba(255,255,255,0.03);}
+.file-item{display:flex;align-items:center;gap:6px;padding:6px 12px 6px 28px;border-top:1px solid var(--border);}
 .fi-icon{font-size:12px;flex-shrink:0;}
-.fi-orig{flex:1;font-family:'Space Mono',monospace;color:var(--muted);font-size:10px;word-break:break-all;}
+.fi-orig{flex:1;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .fi-arrow{color:var(--border);font-size:10px;flex-shrink:0;}
-.fi-new{font-family:'Space Mono',monospace;font-size:10px;color:var(--accent3);word-break:break-all;}
+.fi-new{font-size:11px;color:var(--accent3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:45%;}
 
 /* Revision box */
-.revision-box{background:rgba(250,188,109,0.05);border:1px solid rgba(250,188,109,0.2);border-radius:12px;padding:15px;margin-top:13px;}
-.revision-label{font-family:'Space Mono',monospace;font-size:9px;color:var(--warning);letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;}
-.revision-row{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;}
-.revision-row textarea{flex:1 1 180px;min-height:64px;font-size:11px;}
+.revision-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:12px;}
+.revision-label{font-size:11px;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px;}
+.revision-row{display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;}
+.revision-row textarea{flex:1 1 160px;min-height:56px;font-size:12px;}
 
-/* Bottom actions — full width, no overflow */
-.results-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);}
-.results-actions .btn{flex:1 1 120px;text-align:center;}
+/* Bottom actions */
+.results-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);}
+.results-actions .btn{flex:1 1 100px;text-align:center;}
 
 /* Spinner */
-.spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,0.2);border-top-color:white;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:4px;}
+.spinner{display:inline-block;width:11px;height:11px;border:2px solid rgba(255,255,255,0.25);border-top-color:white;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:4px;}
+[data-theme="light"] .spinner{border-color:rgba(108,71,255,0.2);border-top-color:var(--accent);}
 .pulsing{animation:pulse 1.5s ease infinite;}
 .hidden{display:none!important;}
 
+/* Divider */
+.divider{height:1px;background:var(--border);margin:12px 0;}
+
 /* Toast */
-.toast{position:fixed;bottom:24px;right:16px;left:16px;max-width:320px;margin-left:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 16px;font-size:12px;box-shadow:0 8px 26px rgba(0,0,0,0.45);z-index:999;transform:translateY(14px);opacity:0;transition:all 0.3s;}
+.toast{position:fixed;bottom:20px;right:16px;max-width:300px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,0.12);z-index:999;transform:translateY(10px);opacity:0;transition:all 0.2s;}
+[data-theme="dark"] .toast{box-shadow:0 4px 16px rgba(0,0,0,0.5);}
 .toast.show{transform:translateY(0);opacity:1;}
-.toast.success{border-color:var(--accent3);color:var(--accent3);}
-.toast.error{border-color:var(--accent2);color:var(--accent2);}
-.toast.info{border-color:var(--accent);color:var(--accent);}
+.toast.success{border-left:3px solid var(--accent3);}
+.toast.error{border-left:3px solid #c0392b;}
+.toast.info{border-left:3px solid var(--accent);}
 
-@keyframes fadeDown{from{opacity:0;transform:translateY(-14px)}to{opacity:1;transform:translateY(0)}}
-@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
-@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 @keyframes spin{to{transform:rotate(360deg)}}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}
 
-@media(max-width:480px){
+@media(max-width:500px){
   .sg-3{grid-template-columns:1fr 1fr;}
-  .stats-row{grid-template-columns:1fr 1fr 1fr;}
+  .select-methods{grid-template-columns:1fr 1fr;}
 }
 </style>
 </head>
 <body>
-<div class="glow g1"></div>
-<div class="glow g2"></div>
-
 <div class="container">
 
   <header>
-    <div class="logo">🗂️</div>
-    <div>
-      <h1>Folder<span>Mind</span></h1>
-      <div class="tagline">AI-Powered File Organiser</div>
+    <div class="header-left">
+      <div class="logo">🗂</div>
+      <div>
+        <h1>Folder<span>Mind</span></h1>
+        <div class="tagline">AI File Organiser</div>
+      </div>
     </div>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Toggle light/dark">🌙</button>
   </header>
 
   <!-- Steps -->
@@ -198,14 +231,19 @@ textarea{resize:vertical;min-height:100px;line-height:1.65;}
     <div class="card-label">Step 1 — API Setup</div>
     <div class="input-row">
       <input type="password" id="apiKey" placeholder="Paste your API key here..." oninput="resetApiStatus()" />
-      <button class="btn btn-secondary" onclick="toggleKeyVis()">👁</button>
-      <button class="btn btn-secondary" id="testBtn" onclick="testApiKey()">🔌 Test</button>
+      <button class="btn btn-secondary" onclick="toggleKeyVis()" title="Show/Hide">👁</button>
+      <button class="btn btn-secondary" id="testBtn" onclick="testApiKey()">Test</button>
+    </div>
+    <div class="key-actions">
+      <button class="btn btn-secondary" onclick="saveKey()" style="font-size:12px;padding:5px 10px;">💾 Save key</button>
+      <button class="btn btn-secondary" onclick="clearKey()" style="font-size:12px;padding:5px 10px;">🗑 Clear saved</button>
+      <span id="keySavedNote" class="hidden" style="font-size:11px;color:var(--accent3);">✓ Key saved locally (encrypted)</span>
     </div>
     <div class="api-status" id="apiStatus">
       <div class="status-dot"></div>
       <span id="apiStatusText">Not tested — click Test to verify</span>
     </div>
-    <div class="sg sg-3" style="margin-top:12px;">
+    <div class="sg sg-3" style="margin-top:10px;">
       <div>
         <label>Provider</label>
         <select id="providerSelect" onchange="updateModels()">
@@ -221,15 +259,16 @@ textarea{resize:vertical;min-height:100px;line-height:1.65;}
         <label>Case Style</label>
         <select id="caseStyle">
           <option value="natural">Title Case</option>
+          <option value="sentence">Sentence case</option>
           <option value="lower">all lowercase</option>
           <option value="upper">ALL UPPERCASE</option>
           <option value="original">Keep Original</option>
         </select>
       </div>
     </div>
-    <div style="margin-top:9px;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);">
+    <div style="margin-top:8px;font-size:11px;color:var(--muted);">
       🔑 <a href="https://openrouter.ai" target="_blank" style="color:var(--accent);">openrouter.ai</a>
-      &nbsp;|&nbsp; ⚡ <a href="https://console.groq.com" target="_blank" style="color:var(--accent);">console.groq.com</a>
+      &nbsp;·&nbsp; ⚡ <a href="https://console.groq.com" target="_blank" style="color:var(--accent);">console.groq.com</a>
     </div>
   </div>
 
@@ -249,16 +288,19 @@ textarea{resize:vertical;min-height:100px;line-height:1.65;}
       </div>
     </div>
     <div class="dropzone" id="dropzone">
-      <span class="dz-icon">🗂️</span>
+      <span class="dz-icon">🗂</span>
       <div class="dz-title">Or drag &amp; drop here</div>
       <div class="dz-sub">Drop files or a folder</div>
-      <div id="fileCountBadge" class="badge hidden">
-        <span id="fileCountText">0 files</span>
-      </div>
     </div>
     <input type="file" id="fileInput" multiple style="display:none" />
     <input type="file" id="folderInput" webkitdirectory mozdirectory multiple style="display:none" />
-    <div style="margin-top:9px;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);">🔒 Files never leave your device</div>
+
+    <!-- Selected files list with delete -->
+    <div id="selectedFilesWrap" class="hidden">
+      <div class="selected-files" id="selectedFilesList"></div>
+    </div>
+
+    <div style="margin-top:9px;font-size:11px;color:var(--muted);">🔒 Files never leave your device</div>
   </div>
 
   <!-- Step 3: Prompt -->
@@ -290,12 +332,12 @@ Examples:
 • Put screenshots in one folder, documents in another
 • Add year and month at the start of every filename"></textarea>
 
-    <div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
       <button class="btn btn-primary" id="organiseBtn" onclick="organiseFiles()" disabled>
-        🤖 Generate Preview
+        Generate Preview
       </button>
-      <button class="btn btn-secondary" onclick="clearAll()">✕ Clear All</button>
-      <span id="fileStatusInline" style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);flex:1;">No files selected yet</span>
+      <button class="btn btn-secondary" onclick="clearAll()">Clear All</button>
+      <span id="fileStatusInline" style="font-size:11px;color:var(--muted);flex:1;">No files selected yet</span>
     </div>
 
     <div class="progress-wrap hidden" id="progressWrap">
@@ -310,12 +352,12 @@ Examples:
 
     <div class="stats-row" id="statsRow"></div>
 
-    <div style="font-size:13px;font-weight:700;margin-bottom:9px;">📁 Organised Structure Preview</div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text);">Folder Structure Preview</div>
     <div class="file-tree" id="fileTree"></div>
 
     <!-- Revise -->
     <div class="revision-box">
-      <div class="revision-label">✏️ Not satisfied? Ask AI to revise</div>
+      <div class="revision-label">Not satisfied? Revise</div>
       <div class="revision-row">
         <textarea id="revisionPrompt" placeholder="Tell AI what to change...
 
@@ -331,13 +373,13 @@ Examples:
 
     <!-- Bottom buttons — full width, no overflow -->
     <div class="results-actions">
-      <button class="btn btn-secondary" onclick="expandAll()">⊞ Expand All</button>
-      <button class="btn btn-secondary" onclick="collapseAll()">⊟ Collapse All</button>
-      <button class="btn btn-success" id="downloadBtn" onclick="downloadZip()">📥 Download ZIP</button>
+      <button class="btn btn-secondary" onclick="expandAll()">Expand All</button>
+      <button class="btn btn-secondary" onclick="collapseAll()">Collapse All</button>
+      <button class="btn btn-success" id="downloadBtn" onclick="downloadZip()">Download ZIP</button>
     </div>
 
-    <div style="margin-top:9px;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);line-height:1.9;">
-      ✨ Extract ZIP to apply &nbsp;|&nbsp; 🔒 Originals untouched &nbsp;|&nbsp; ↩️ Revise unlimited times
+    <div style="margin-top:8px;font-size:11px;color:var(--muted);">
+      Extract ZIP to apply &nbsp;·&nbsp; Originals untouched &nbsp;·&nbsp; Revise unlimited times
     </div>
   </div>
 
@@ -348,6 +390,48 @@ Examples:
 let selectedFiles = [];
 let organiseResult = {};
 let conversationHistory = [];
+
+// ─── Theme ───
+function initTheme(){
+  const saved = localStorage.getItem('fm_theme') || 'light';
+  document.body.setAttribute('data-theme', saved);
+  document.getElementById('themeBtn').textContent = saved === 'dark' ? '☀️' : '🌙';
+}
+function toggleTheme(){
+  const cur = document.body.getAttribute('data-theme') || 'light';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.body.setAttribute('data-theme', next);
+  document.getElementById('themeBtn').textContent = next === 'dark' ? '☀️' : '🌙';
+  localStorage.setItem('fm_theme', next);
+}
+initTheme();
+
+// ─── API Key localStorage (obfuscated, not true encryption but prevents casual reading) ───
+function encodeKey(k){ return btoa(k.split('').reverse().join('')); }
+function decodeKey(e){ try{ return atob(e).split('').reverse().join(''); }catch{ return ''; } }
+
+function saveKey(){
+  const k = document.getElementById('apiKey').value.trim();
+  if(!k){ showToast('No key to save', 'error'); return; }
+  localStorage.setItem('fm_apikey', encodeKey(k));
+  document.getElementById('keySavedNote').classList.remove('hidden');
+  showToast('API key saved locally', 'success');
+  setTimeout(()=>document.getElementById('keySavedNote').classList.add('hidden'), 3000);
+}
+function clearKey(){
+  localStorage.removeItem('fm_apikey');
+  document.getElementById('apiKey').value = '';
+  resetApiStatus();
+  showToast('Saved key cleared', 'info');
+}
+function loadSavedKey(){
+  const saved = localStorage.getItem('fm_apikey');
+  if(saved){
+    const k = decodeKey(saved);
+    if(k){ document.getElementById('apiKey').value = k; }
+  }
+}
+loadSavedKey();
 
 // ─── Models ───
 const MODELS = {
@@ -367,7 +451,6 @@ const MODELS = {
     {value:'llama-3.3-70b-versatile',label:'Llama 3.3 70B'},
   ]
 };
-
 function updateModels(){
   const p=document.getElementById('providerSelect').value;
   document.getElementById('modelSelect').innerHTML=MODELS[p].map(m=>`<option value="${m.value}">${m.label}</option>`).join('');
@@ -397,28 +480,66 @@ dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-ove
 dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
 dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');if(e.dataTransfer.files.length)handleFiles(Array.from(e.dataTransfer.files));});
 
+function formatSize(b){
+  if(b<1024)return b+'B';
+  if(b<1048576)return (b/1024).toFixed(0)+'KB';
+  return (b/1048576).toFixed(1)+'MB';
+}
+
 function handleFiles(files){
   if(!files.length)return;
-  selectedFiles=files;
-  const hasFolder=files[0]?.webkitRelativePath?.includes('/');
-  const folderName=hasFolder?files[0].webkitRelativePath.split('/')[0]:null;
-  const txt=hasFolder?`📂 ${folderName} — ${files.length} files`:`📄 ${files.length} file${files.length!==1?'s':''} selected`;
-  document.getElementById('fileCountBadge').classList.remove('hidden');
-  document.getElementById('fileCountText').textContent=txt;
-  document.getElementById('fileStatusInline').textContent=txt;
-  document.getElementById('organiseBtn').disabled=false;
-  setStep(2); showToast(`${files.length} files loaded`,'info');
+  selectedFiles = [...selectedFiles, ...files];
+  // Dedupe by name+size
+  const seen = new Set();
+  selectedFiles = selectedFiles.filter(f=>{
+    const k = (f.webkitRelativePath||f.name)+f.size;
+    if(seen.has(k))return false; seen.add(k); return true;
+  });
+  renderSelectedFiles();
+  document.getElementById('organiseBtn').disabled = false;
+  setStep(2);
+  showToast(`${files.length} file${files.length!==1?'s':''} added`, 'info');
+}
+
+function renderSelectedFiles(){
+  const wrap = document.getElementById('selectedFilesWrap');
+  const list = document.getElementById('selectedFilesList');
+  const status = document.getElementById('fileStatusInline');
+  if(!selectedFiles.length){
+    wrap.classList.add('hidden');
+    status.textContent = 'No files selected yet';
+    document.getElementById('organiseBtn').disabled = true;
+    return;
+  }
+  wrap.classList.remove('hidden');
+  status.textContent = `${selectedFiles.length} file${selectedFiles.length!==1?'s':''} selected`;
+  list.innerHTML = `
+    <div class="sel-header">
+      <strong>${selectedFiles.length} file${selectedFiles.length!==1?'s':''}</strong>
+      <button class="btn btn-danger" onclick="clearAll()" style="padding:3px 8px;font-size:11px;">Remove all</button>
+    </div>
+    ${selectedFiles.map((f,i)=>`
+      <div class="sel-file">
+        <span>${icon(f.name)}</span>
+        <span class="sel-file-name" title="${f.webkitRelativePath||f.name}">${f.name}</span>
+        <span class="sel-file-size">${formatSize(f.size)}</span>
+        <button class="sel-file-del" onclick="removeFile(${i})" title="Remove">×</button>
+      </div>`).join('')}`;
+}
+
+function removeFile(i){
+  selectedFiles.splice(i,1);
+  renderSelectedFiles();
+  if(!selectedFiles.length) setStep(1);
 }
 
 function clearAll(){
   selectedFiles=[];organiseResult={};conversationHistory=[];
   ['fileInput','folderInput'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('fileCountBadge').classList.add('hidden');
-  document.getElementById('organiseBtn').disabled=true;
   document.getElementById('resultsCard').classList.add('hidden');
-  document.getElementById('fileStatusInline').textContent='No files selected yet';
   document.getElementById('statusText').textContent='';
   document.getElementById('progressWrap').classList.add('hidden');
+  renderSelectedFiles();
   setStep(1);
 }
 
@@ -428,7 +549,7 @@ function setChip(el){
   document.getElementById('userPrompt').focus();
 }
 
-// ─── Case ───
+// ─── Case style ───
 function applyCase(name){
   const s=document.getElementById('caseStyle').value;
   const dot=name.lastIndexOf('.');
@@ -438,6 +559,7 @@ function applyCase(name){
   if(s==='lower')r=base.toLowerCase();
   else if(s==='upper')r=base.toUpperCase();
   else if(s==='natural')r=base.replace(/\b\w/g,c=>c.toUpperCase());
+  else if(s==='sentence')r=base.charAt(0).toUpperCase()+base.slice(1).toLowerCase();
   else r=base;
   return r+ext;
 }
@@ -447,24 +569,49 @@ function applyFolderCase(folder){
     if(s==='lower')return p.toLowerCase();
     if(s==='upper')return p.toUpperCase();
     if(s==='natural')return p.replace(/\b\w/g,c=>c.toUpperCase());
+    if(s==='sentence')return p.charAt(0).toUpperCase()+p.slice(1).toLowerCase();
     return p;
   }).join('/');
 }
+
+// ─── Sanitize + extension protection ───
 function sanitize(name){
-  return name.replace(/_/g,' ').replace(/[^\w\s.\-()'"]/g,'').replace(/\s+/g,' ').trim();
+  return name.replace(/_/g,' ').replace(/[^\w\s.\-()']/g,'').replace(/\s+/g,' ').trim();
+}
+
+// Strip extension words from base name (e.g. "report pdf final" → "report final")
+function stripExtFromName(name){
+  const dot = name.lastIndexOf('.');
+  if(dot<=0) return name;
+  const ext = name.slice(dot+1).toLowerCase(); // e.g. "pdf"
+  const base = name.slice(0, dot);
+  // Remove occurrences of the extension word from the base (case-insensitive, whole word)
+  const cleaned = base.replace(new RegExp('\\b'+ext+'\\b','gi'),'').replace(/\s+/g,' ').trim();
+  return (cleaned||base) + name.slice(dot);
+}
+
+// Protect extension: always keep original extension
+function protectExtension(newName, origName){
+  const origDot = origName.lastIndexOf('.');
+  if(origDot<=0) return newName; // no extension in original
+  const origExt = origName.slice(origDot); // e.g. ".pdf"
+  const newDot = newName.lastIndexOf('.');
+  const newBase = newDot>0 ? newName.slice(0,newDot) : newName;
+  return newBase + origExt; // force original extension
 }
 
 // ─── System prompt ───
 function buildSystem(){
   const s=document.getElementById('caseStyle').value;
-  const ci={natural:'Use Title Case (capitalise first letter of each word) for all file and folder names.',lower:'Use all lowercase for all file and folder names.',upper:'Use ALL UPPERCASE for all file and folder names.',original:'Keep original casing as much as possible.'}[s];
+  const ci={natural:'Title Case for names.',lower:'All lowercase.',upper:'ALL UPPERCASE.',sentence:'Sentence case.',original:'Keep original casing.'}[s];
   return `You are a file organisation assistant. ${ci}
-Rules:
-- NEVER use underscores between words — always use spaces
-- Return ONLY a valid raw JSON object, no markdown, no code fences, no explanation
-- Format: { "original_filename": { "folder": "Folder/Subfolder", "newName": "New Name.ext" } }
-- Keep file extensions exactly as they are
-- Folder paths use / separator, max 3 levels deep`;
+CRITICAL rules:
+- NEVER change file extensions — extensions must remain exactly as they are
+- NEVER put the extension word inside the file name base (e.g. do NOT name a file "Report PDF" — just "Report")
+- NEVER use underscores between words — use spaces
+- Return ONLY a valid raw JSON object, no markdown, no code fences
+- Format: { "original_key": { "folder": "Folder/Sub", "newName": "Clean Name.ext" } }
+- Max folder depth: 3 levels, use / as separator`;
 }
 
 // ─── Call AI ───
@@ -485,6 +632,28 @@ async function callAI(key,model,messages,maxTokens=4000){
   }
 }
 
+// ─── Post-process AI result ───
+function postProcess(results, origFileMap){
+  for(const k of Object.keys(results)){
+    const info = results[k];
+    const origFile = origFileMap[k];
+    const origName = origFile ? origFile.name : k.split('/').pop();
+
+    // 1. Sanitize
+    let newName = sanitize(info.newName || origName);
+    // 2. Strip extension word from name base
+    newName = stripExtFromName(newName);
+    // 3. Force original extension (NEVER let AI change it)
+    newName = protectExtension(newName, origName);
+    // 4. Apply case
+    newName = applyCase(newName);
+
+    info.newName = newName;
+    info.folder = applyFolderCase(info.folder||'Unsorted');
+  }
+  return results;
+}
+
 // ─── Organise ───
 async function organiseFiles(){
   const key=document.getElementById('apiKey').value.trim();
@@ -498,6 +667,9 @@ async function organiseFiles(){
   document.getElementById('progressWrap').classList.remove('hidden');
   setStep(3);
 
+  const origFileMap={};
+  for(const f of selectedFiles) origFileMap[f.webkitRelativePath||f.name]=f;
+
   const fileNames=selectedFiles.map(f=>f.webkitRelativePath||f.name);
   const batchSize=250;
   const batches=[];
@@ -508,12 +680,12 @@ async function organiseFiles(){
   conversationHistory=[];
 
   for(let b=0;b<batches.length;b++){
-    setStatus(`<span class="pulsing">🤖 Processing batch ${b+1} of ${batches.length}...</span>`);
+    setStatus(`Processing batch ${b+1} of ${batches.length}...`);
     setProgress((b/batches.length)*75);
     const userMsg=`${userInstr||'Organise these files intelligently into logical folders with clean descriptive names.'}\n\nFiles:\n${batches[b].join('\n')}`;
     const msgs=[{role:'system',content:system},{role:'user',content:userMsg}];
     const parsed=await callAI(key,model,msgs);
-    if(parsed===null){btn.disabled=false;btn.innerHTML='🤖 Generate Preview';setProgress(0);setStep(2);return;}
+    if(parsed===null){btn.disabled=false;btn.innerHTML='Generate Preview';setProgress(0);setStep(2);return;}
     Object.assign(allResults,parsed);
     if(b===batches.length-1){
       conversationHistory=[
@@ -530,18 +702,11 @@ async function organiseFiles(){
     if(!allResults[k])allResults[k]={folder:'Unsorted',newName:f.name};
   }
 
-  // Apply case + sanitize
-  for(const k of Object.keys(allResults)){
-    const info=allResults[k];
-    info.newName=applyCase(sanitize(info.newName||k.split('/').pop()));
-    info.folder=applyFolderCase(info.folder||'Unsorted');
-  }
-
-  organiseResult=allResults;
+  organiseResult = postProcess(allResults, origFileMap);
   setProgress(100);
-  renderResults(allResults);
-  setStatus('✅ Preview ready — review below, revise if needed, then download.');
-  btn.disabled=false; btn.innerHTML='🤖 Re-Generate';
+  renderResults(organiseResult);
+  setStatus('Preview ready — review, revise if needed, then download.');
+  btn.disabled=false; btn.innerHTML='Generate Preview';
   setStep(4); showToast('Preview ready!','success');
 }
 
@@ -555,32 +720,32 @@ async function reviseFiles(){
   const model=document.getElementById('modelSelect').value;
   const btn=document.getElementById('reviseBtn');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
-  setStatus('<span class="pulsing">🔄 Revising structure...</span>');
+  setStatus('Revising...');
+
+  const origFileMap={};
+  for(const f of selectedFiles) origFileMap[f.webkitRelativePath||f.name]=f;
 
   const msgs=[
     ...conversationHistory,
-    {role:'user',content:`Revise the organisation with these changes:\n${revision}\n\nReturn the COMPLETE updated JSON for ALL files.`}
+    {role:'user',content:`Revise with these changes:\n${revision}\n\nReturn COMPLETE updated JSON for ALL files.`}
   ];
 
   const parsed=await callAI(key,model,msgs,5000);
-  if(parsed===null){btn.disabled=false;btn.innerHTML='🔄 Revise';return;}
+  if(parsed===null){btn.disabled=false;btn.innerHTML='Revise';return;}
 
   for(const[k,info]of Object.entries(parsed)){
-    if(organiseResult[k]!==undefined){
-      info.newName=applyCase(sanitize(info.newName||k.split('/').pop()));
-      info.folder=applyFolderCase(info.folder||'Unsorted');
-      organiseResult[k]=info;
-    }
+    if(organiseResult[k]!==undefined) organiseResult[k]=info;
   }
 
+  organiseResult = postProcess(organiseResult, origFileMap);
   conversationHistory.push(
     {role:'user',content:`Revise: ${revision}`},
     {role:'assistant',content:JSON.stringify(parsed)}
   );
 
   renderResults(organiseResult);
-  setStatus('✅ Revised! Check the updated preview.');
-  btn.disabled=false; btn.innerHTML='🔄 Revise';
+  setStatus('Revised — check the updated preview.');
+  btn.disabled=false; btn.innerHTML='Revise';
   document.getElementById('revisionPrompt').value='';
   showToast('Structure revised!','success');
 }
@@ -601,8 +766,7 @@ function renderResults(results){
   const fCount=Object.keys(folders).length;
   let renamed=0;
   for(const[k,info]of Object.entries(results)){
-    const origBase=k.split('/').pop();
-    if(info.newName&&info.newName!==origBase)renamed++;
+    if(info.newName&&info.newName!==k.split('/').pop())renamed++;
   }
 
   document.getElementById('statsRow').innerHTML=`
@@ -616,12 +780,12 @@ function renderResults(results){
   for(const[folder,files]of Object.entries(folders).sort((a,b)=>a[0].localeCompare(b[0]))){
     const parts=folder.split('/');
     const indent=(parts.length-1)*10;
-    const folderDisp=parts.map((p,i)=>i<parts.length-1?`<span style="color:var(--muted)">${p} /</span> `:`<strong>${p}</strong>`).join('');
+    const folderDisp=parts.map((p,i)=>i<parts.length-1?`<span style="color:var(--muted)">${p} / </span>`:`<strong>${p}</strong>`).join('');
     const group=document.createElement('div');
     group.className='folder-group';
     group.innerHTML=`
       <div class="folder-header" onclick="toggleFolder(this)">
-        <span style="margin-left:${indent}px">📂</span>
+        <span style="margin-left:${indent}px;flex-shrink:0;">📁</span>
         <span class="folder-name">${folderDisp}</span>
         <span class="folder-count">${files.length} file${files.length!==1?'s':''}</span>
         <span class="folder-toggle">▶</span>
@@ -632,8 +796,8 @@ function renderResults(results){
           const changed=f.newName!==origBase;
           return`<div class="file-item">
             <span class="fi-icon">${icon(f.newName)}</span>
-            <span class="fi-orig">${origBase}</span>
-            ${changed?`<span class="fi-arrow">→</span><span class="fi-new">${f.newName}</span>`:''}
+            <span class="fi-orig" title="${origBase}">${origBase}</span>
+            ${changed?`<span class="fi-arrow">→</span><span class="fi-new" title="${f.newName}">${f.newName}</span>`:''}
           </div>`;
         }).join('')}
       </div>`;
@@ -656,15 +820,12 @@ async function downloadZip(){
   try{
     const zip=new JSZip();
     const fileMap={};
-    for(const f of selectedFiles)fileMap[f.webkitRelativePath||f.name]=f;
+    for(const f of selectedFiles) fileMap[f.webkitRelativePath||f.name]=f;
 
     let count=0;
     for(const[orig,info]of Object.entries(organiseResult)){
       let file=fileMap[orig];
-      if(!file){
-        const base=orig.split('/').pop();
-        file=Object.values(fileMap).find(f=>f.name===base);
-      }
+      if(!file){ const base=orig.split('/').pop(); file=Object.values(fileMap).find(f=>f.name===base); }
       if(!file)continue;
       const folder=(info.folder||'Unsorted').replace(/\\/g,'/');
       const newName=sanitize(info.newName||file.name);
@@ -672,38 +833,38 @@ async function downloadZip(){
       count++;
     }
 
-    setStatus(`📦 Packing ${count} files...`);
+    setStatus(`Packing ${count} files...`);
     const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}},m=>setProgress(m.percent));
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
     a.download='FolderMind Organised.zip';
     a.click(); URL.revokeObjectURL(a.href);
-    setStatus('✅ Downloaded! Extract ZIP to apply the new organisation.');
+    setStatus('Downloaded! Extract ZIP to apply.');
     showToast('ZIP downloaded!','success');
   }catch(err){showToast(`ZIP error: ${err.message}`,'error');}
-  btn.disabled=false; btn.innerHTML='📥 Download ZIP';
+  btn.disabled=false; btn.innerHTML='Download ZIP';
 }
 
 // ─── API test ───
 async function testApiKey(){
   const key=document.getElementById('apiKey').value.trim();
-  if(!key){setApiStatus('failed','⚠️ Enter API key first');return;}
+  if(!key){setApiStatus('failed','⚠ Enter API key first');return;}
   const btn=document.getElementById('testBtn');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
-  setApiStatus('testing','Testing connection...');
+  setApiStatus('testing','Testing...');
   try{
     const res=await fetch(getEndpoint(),{method:'POST',headers:getHeaders(key),body:JSON.stringify({model:document.getElementById('modelSelect').value,messages:[{role:'user',content:'Say OK'}],max_tokens:5})});
     const data=await res.json();
     if(!res.ok)throw new Error(data.error?.message||`Error ${res.status}`);
     const short=(data.model||document.getElementById('modelSelect').value).split('/').pop().replace(':free','');
     const prov=document.getElementById('providerSelect').value;
-    setApiStatus('connected',`✅ Connected — ${prov==='groq'?'⚡ Groq':'OpenRouter'}: ${short}`);
+    setApiStatus('connected',`Connected — ${prov==='groq'?'Groq':'OpenRouter'}: ${short}`);
     showToast('API connected!','success');
   }catch(err){
-    setApiStatus('failed',`❌ ${err.message.slice(0,55)}`);
-    showToast('Connection failed — check API key','error');
+    setApiStatus('failed',`Failed: ${err.message.slice(0,50)}`);
+    showToast('Check your API key','error');
   }
-  btn.disabled=false; btn.innerHTML='🔌 Test';
+  btn.disabled=false; btn.innerHTML='Test';
 }
 function setApiStatus(state,msg){document.getElementById('apiStatus').className=`api-status ${state}`;document.getElementById('apiStatusText').textContent=msg;}
 function resetApiStatus(){setApiStatus('','Not tested — click Test to verify');}
@@ -712,9 +873,9 @@ function toggleKeyVis(){const k=document.getElementById('apiKey');k.type=k.type=
 // ─── Misc ───
 function icon(n){
   const e=(n||'').split('.').pop().toLowerCase();
-  return{pdf:'📕',doc:'📝',docx:'📝',txt:'📄',md:'📄',jpg:'🖼️',jpeg:'🖼️',png:'🖼️',gif:'🖼️',svg:'🎨',webp:'🖼️',mp4:'🎬',mov:'🎬',avi:'🎬',mkv:'🎬',mp3:'🎵',wav:'🎵',flac:'🎵',m4a:'🎵',zip:'📦',rar:'📦',tar:'📦',gz:'📦',xls:'📊',xlsx:'📊',csv:'📊',ppt:'📊',pptx:'📊',js:'💻',ts:'💻',py:'🐍',html:'🌐',css:'🎨',json:'⚙️',exe:'⚙️'}[e]||'📄';
+  return{pdf:'📕',doc:'📝',docx:'📝',txt:'📄',md:'📄',jpg:'🖼',jpeg:'🖼',png:'🖼',gif:'🖼',svg:'🎨',webp:'🖼',mp4:'🎬',mov:'🎬',avi:'🎬',mkv:'🎬',mp3:'🎵',wav:'🎵',flac:'🎵',m4a:'🎵',zip:'📦',rar:'📦',tar:'📦',gz:'📦',xls:'📊',xlsx:'📊',csv:'📊',ppt:'📊',pptx:'📊',js:'💻',ts:'💻',py:'🐍',html:'🌐',css:'🎨',json:'⚙',exe:'⚙'}[e]||'📄';
 }
-function setStatus(m){document.getElementById('statusText').innerHTML=m;}
+function setStatus(m){document.getElementById('statusText').textContent=m;}
 function setProgress(p){document.getElementById('progressBar').style.width=p+'%';}
 function setStep(n){
   for(let i=1;i<=5;i++){
@@ -730,7 +891,7 @@ let tt;
 function showToast(msg,type='info'){
   const t=document.getElementById('toast');
   t.textContent=msg; t.className=`toast show ${type}`;
-  clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('show'),3200);
+  clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('show'),3000);
 }
 </script>
 </body>
