@@ -400,7 +400,7 @@ select{display:none !important;}
     <!-- Active agent display + manage button -->
     <div id="agentDisplay" class="agent-display">
       <div id="agentInfo" class="agent-info-empty">
-        <span style="color:var(--muted);font-size:13px;">No agent connected</span>
+        <span style="color:var(--muted);font-size:13px;">No agent — click Manage</span>
       </div>
       <button class="btn-manage" onclick="openAgentManager()" title="Manage agents">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -467,37 +467,36 @@ select{display:none !important;}
 
       <!-- Add new key -->
       <div class="modal-section">
-        <div class="modal-section-label">Add API Key</div>
+        <div class="modal-section-label">Add Key</div>
         <div class="modal-input-row">
-          <input type="password" id="modalApiKey" placeholder="Paste API key — provider auto-detected" autocomplete="off" oninput="autoDetectProvider()" />
+          <input type="password" id="modalApiKey" placeholder="Paste API key" autocomplete="off" oninput="autoDetectProvider()" />
           <button class="modal-eye-btn" onclick="toggleModalKeyVis()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
         </div>
         <div id="detectedProvider" class="detected-provider hidden"></div>
         <div class="modal-input-row" style="margin-top:6px;">
-          <input type="text" id="modalNickname" placeholder="Nickname (optional — e.g. Work Key)" />
+          <input type="text" id="modalNickname" placeholder="Nickname (optional)" />
           <button class="btn btn-primary" id="modalAddBtn" onclick="addAgent()" disabled style="flex-shrink:0;">Add</button>
         </div>
       </div>
 
       <!-- Saved agents -->
       <div class="modal-section">
-        <div class="modal-section-label">Saved Agents</div>
+        <div class="modal-section-label">Agents</div>
         <div id="agentList"></div>
       </div>
 
       <div style="padding:12px 16px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);">
-        Keys stored locally in your browser only &nbsp;·&nbsp;
-        <a href="https://openrouter.ai" target="_blank" style="color:var(--accent);">OpenRouter</a> &nbsp;·&nbsp;
-        <a href="https://console.groq.com" target="_blank" style="color:var(--accent);">Groq</a>
+        
+  <a href="https://openrouter.ai" target="_blank" style="color:var(--accent);">openrouter.ai</a> · <a href="https://console.groq.com" target="_blank" style="color:var(--accent);">console.groq.com</a>
       </div>
     </div>
   </div>
 
   <!-- Step 2: Files -->
   <div class="card">
-    <div class="card-label">Step 2 — Select Files or Folders</div>
+    <div class="card-label">Step 2 — Files</div>
     <div class="select-methods" style="grid-template-columns:1fr 1fr 1fr;">
       <div class="sm-btn" onclick="document.getElementById('fileInput').click()">
         <div class="sm-icon"><span class="ic ic-lg"><svg><use href="#ic-files"/></svg></span></div>
@@ -529,44 +528,30 @@ select{display:none !important;}
       <div class="selected-files" id="selectedFilesList"></div>
     </div>
 
-    <div style="margin-top:9px;font-size:11px;color:var(--muted);"><span class="ic ic-sm"><svg><use href="#ic-lock"/></svg></span> Files never leave your device — add as many folders as you want</div>
+    <div style="margin-top:9px;font-size:11px;color:var(--muted);"><span class="ic ic-sm"><svg><use href="#ic-lock"/></svg></span> Files stay on your device</div>
   </div>
 
   <!-- Step 3: Prompt -->
   <div class="card">
-    <div class="card-label">Step 3 — Tell AI What You Want</div>
+    <div class="card-label">Step 3 — Prompt</div>
 
-    <div class="chips-label">Quick presets — click any to use</div>
-    <div class="chips">
-      <span class="chip" onclick="setChip(this)">Organise by file type</span>
-      <span class="chip" onclick="setChip(this)">Group by project and topic</span>
-      <span class="chip" onclick="setChip(this)">Sort by date, newest first</span>
-      <span class="chip" onclick="setChip(this)">Work vs Personal split</span>
-      <span class="chip" onclick="setChip(this)">Keep flat, just rename files</span>
-      <span class="chip" onclick="setChip(this)">Max 3 folders, no subfolders</span>
-      <span class="chip" onclick="setChip(this)">Add date prefix to all filenames</span>
-      <span class="chip" onclick="setChip(this)">All lowercase, no special characters</span>
-      <span class="chip" onclick="setChip(this)">Remove numbers and codes from names</span>
-      <span class="chip" onclick="setChip(this)">Short names only, max 3 words each</span>
+<div class="chips">
+      <span class="chip" onclick="setChip(this)">By file type</span>
+      <span class="chip" onclick="setChip(this)">By project</span>
+      <span class="chip" onclick="setChip(this)">Work vs Personal</span>
+      <span class="chip" onclick="setChip(this)">Flat, just rename</span>
+      <span class="chip" onclick="setChip(this)">Add date prefix</span>
+      <span class="chip" onclick="setChip(this)">Short names only</span>
     </div>
 
-    <textarea id="userPrompt" placeholder="Write your own instruction for the AI...
-
-Examples:
-• Put all invoices in Finance/2024, photos by event name
-• I want everything in lowercase with no special characters  
-• Create only 3 folders: Work, Personal, Archive
-• Keep original filenames, only organise into folders
-• Rename everything to be short and descriptive, max 4 words
-• Put screenshots in one folder, documents in another
-• Add year and month at the start of every filename"></textarea>
+    <textarea id="userPrompt" placeholder="Enter your prompt..."></textarea>
 
     <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
       <button class="btn btn-primary" id="organiseBtn" onclick="organiseFiles()" disabled>
         Generate Preview
       </button>
       <button class="btn btn-secondary" onclick="clearAll()"><span class="ic ic-sm"><svg><use href="#ic-x"/></svg></span> Clear All</button>
-      <span id="fileStatusInline" style="font-size:11px;color:var(--muted);flex:1;">No files selected yet</span>
+      <span id="fileStatusInline" style="font-size:11px;color:var(--muted);flex:1;">No files selected</span>
     </div>
 
     <div class="progress-wrap hidden" id="progressWrap">
@@ -577,7 +562,7 @@ Examples:
 
   <!-- Step 4+5: Results -->
   <div class="card hidden" id="resultsCard">
-    <div class="card-label">Step 4 — Review, Revise &amp; Download</div>
+    <div class="card-label">Step 4 — Review</div>
 
     <div class="stats-row" id="statsRow"></div>
 
@@ -596,12 +581,9 @@ Examples:
 
     <!-- Revise -->
     <div class="revision-box">
-      <div class="revision-label">Not satisfied? Revise</div>
+      <div class="revision-label">Revise</div>
       <div class="revision-row">
-        <textarea id="revisionPrompt" placeholder="Tell AI what to change...
-• Move all PDFs into a single Documents folder
-• I want shorter folder names, max 2 words
-• Rename files to include the date at the start"></textarea>
+        <textarea id="revisionPrompt" placeholder="What to change..."></textarea>
         <button class="btn btn-warn" id="reviseBtn" onclick="reviseFiles()"><span class="ic ic-sm"><svg><use href="#ic-refresh"/></svg></span> Revise</button>
       </div>
     </div>
@@ -614,7 +596,7 @@ Examples:
     </div>
 
     <div style="margin-top:8px;font-size:11px;color:var(--muted);">
-      Extract ZIP to apply &nbsp;·&nbsp; Originals untouched &nbsp;·&nbsp; Revise unlimited times
+      Originals untouched
     </div>
   </div>
 
@@ -816,7 +798,7 @@ function deleteAgent(e, id){
     if(activeAgentId) setActiveAgent(activeAgentId);
     else {
       document.getElementById('agentInfo').className='agent-info-empty';
-      document.getElementById('agentInfo').innerHTML='<span style="color:var(--muted);font-size:13px;">No agent connected</span>';
+      document.getElementById('agentInfo').innerHTML='<span style="color:var(--muted);font-size:13px;">No agent — click Manage</span>';
       document.getElementById('modelRow').classList.add('hidden');
     }
   }
@@ -990,7 +972,7 @@ function renderSelectedFiles(){
   const status = document.getElementById('fileStatusInline');
   if(!selectedFiles.length){
     wrap.classList.add('hidden');
-    status.textContent = 'No files selected yet';
+    status.textContent = 'No files selected';
     document.getElementById('organiseBtn').disabled = true;
     return;
   }
@@ -1352,46 +1334,45 @@ function buildSystem(){
   const customFmt = s==='custom' ? document.getElementById('customFormat').value.trim() : '';
 
   const caseInstr = {
-    natural:  'Use Title Case for all file and folder names.',
-    sentence: 'Use Sentence case (first word capitalised only).',
-    lower:    'Use all lowercase for all file and folder names.',
-    upper:    'USE ALL UPPERCASE for all file and folder names.',
+    natural:  'Title Case for all file and folder names.',
+    sentence: 'Sentence case (first word capitalised only).',
+    lower:    'all lowercase for all file and folder names.',
+    upper:    'ALL UPPERCASE for all file and folder names.',
     original: 'Keep original casing as much as possible.',
-    custom:   customFmt ? `File naming format: ${customFmt}` : 'Use Title Case.',
-  }[s] || 'Use Title Case.';
+    custom:   customFmt ? customFmt : 'Title Case.',
+  }[s] || 'Title Case.';
 
   const devMode = isDevProject(selectedFiles);
 
-  return `You are a file organisation assistant. ${caseInstr}
+  return `You are a file organisation assistant. Your job is to read the USER INSTRUCTION below and follow it EXACTLY.
 
-FILE TYPE AWARENESS — treat each type correctly:
-- .ico, .icns, .cur files = ICONS (not documents) → put in "Icons" or "Assets/Icons" folder
-- .lnk, .url, .webloc = SHORTCUTS → group near what they point to (game shortcut → Games, etc.)
-- .exe, .msi, .app, .dmg = EXECUTABLES / INSTALLERS → "Software" or "Installers"
-- .psd, .ai, .xcf, .sketch, .fig = DESIGN FILES → "Design" folder
-- .py, .js, .ts, .java etc = CODE → see code rules below
-- Images (.jpg/.png/.gif etc), Videos (.mp4/.mov etc), Audio (.mp3/.wav etc) must each go in their own category
+CRITICAL — READ THIS FIRST:
+The user may give very specific instructions like:
+  - "files with VIN numbers go in Vehicle Docs folder"
+  - "registration number files go in Registration folder"
+  - "invoices go in Finance/Invoices"
+  - "anything with date 2024 goes in Archive/2024"
+You MUST follow these specific instructions literally and precisely. Look carefully at each filename for the patterns the user describes. If a filename contains what the user mentioned (a VIN, a registration number, an invoice number, a date, a keyword), put it in EXACTLY the folder the user asked for.
 
-RENAMING RULES — very important:
-- Keep names SHORT and RECOGNISABLE — max 4-5 words in the base name
-- Do NOT replace the full name — shorten and clean it while keeping meaning
-- If name is random (e.g. "xkf82jd_final_v3_FINAL2") → make it short and descriptive based on context
-- If name is already clear and short → keep it as-is or make minor cleanup only
-- Never put the extension word inside the base name (e.g. never "Report PDF" — just "Report")
-- Never use underscores between words — use spaces
-- NEVER change the file extension — keep exactly as-is${devMode ? `
+USER INSTRUCTION HAS THE HIGHEST PRIORITY. Generic rules below are only fallbacks for files the user instruction does not cover.
 
-DEV PROJECT DETECTED — special rules:
-- Do NOT rename any code files (.py, .js, .ts, .html, .css, .json, .yaml etc) — keep exact original name
-- Do NOT rename config files (package.json, requirements.txt, .env, .gitignore etc)
-- Only organise into folders if the project is clearly multi-module; otherwise keep flat
-- Suggested folders: src/, tests/, docs/, assets/, config/ — only if files clearly belong there` : ''}
+─── FALLBACK RULES (only when user gives no specific instruction for a file) ───
+Naming: ${caseInstr}
+- Icons (.ico .icns) → "Icons" folder — NOT Documents
+- Shortcuts (.lnk .url) → group with what they point to
+- Executables (.exe .msi .dmg) → "Software" folder
+- Images → "Images" folder, Videos → "Videos", Audio → "Audio"
+- Never put extension word in the filename (no "Report PDF" — just "Report")
+- No underscores between words — use spaces
+- Keep names short and recognisable — max 4-5 words
+- NEVER change the file extension${devMode ? `
+- DEV PROJECT: Do NOT rename code files (.py .js .ts .html .css .json) — keep exact names` : ''}
 
-OUTPUT RULES:
-- Return ONLY a valid raw JSON object — no markdown, no code fences, no explanation
-- You MUST return an entry for EVERY file — do not skip any file
-- Format: { "original_filename": { "folder": "Folder/Sub", "newName": "Clean Name.ext" } }
-- Max folder depth: 3 levels, use / as separator`;
+─── OUTPUT FORMAT ───
+Return ONLY a raw JSON object. No markdown. No explanation. No code fences.
+You MUST include an entry for EVERY file — do not skip any.
+{ "original_filename": { "folder": "Folder/Sub", "newName": "New Name.ext" } }
+Max 3 folder levels, use / as separator.`;
 }
 
 // ─── Anthropic API adapter ───
@@ -1536,11 +1517,17 @@ async function organiseFiles(){
   }
   const typeHint=Object.entries(typeSummary).filter(([,v])=>v>0).map(([k,v])=>`${v} ${k}`).join(', ');
 
-  // Smart batch sizing — keep batches large, rely on robust JSON parser
-  const BATCH = total<=300 ? total : total<=800 ? 400 : 500;
+  // Detect bulk media for batch sizing only
+  const mediaCount = (typeSummary.image||0) + (typeSummary.video||0);
+  const isBulkMedia = mediaCount > 50 && mediaCount / total > 0.6;
+
+  // Smaller batches = reliable JSON, no timeouts
+  const BATCH = total<=100 ? total : 100;
   const batches=[];
   for(let i=0;i<fileNames.length;i+=BATCH) batches.push(fileNames.slice(i,i+BATCH));
-  const outTokens=Math.min(16000,Math.max(4000,BATCH*20));
+
+  // Token budget per batch
+  const outTokens = Math.min(8000, BATCH * 22);
 
   const system=buildSystem();
   let allResults={};
@@ -1548,7 +1535,9 @@ async function organiseFiles(){
 
   for(let b=0;b<batches.length;b++){
     const batch=batches[b];
-    setStatus(batches.length===1?`Organising ${total} files...`:`Batch ${b+1}/${batches.length} — ${batch.length} files...`);
+    setStatus(batches.length===1
+      ? `Organising ${total} files...`
+      : `Batch ${b+1} of ${batches.length} — ${Math.round(((b)/batches.length)*100)}% done...`);
     setProgress(10+(b/batches.length)*65);
 
     // Indexed format for large batches — saves tokens
@@ -1562,16 +1551,46 @@ async function organiseFiles(){
       : '';
 
     const userMsg=[
-      userInstr||'Organise these files into logical folders with clean names.',
-      `Types: ${typeHint}`,
+      userInstr
+        ? `=== USER INSTRUCTION (follow this EXACTLY and with highest priority) ===\n${userInstr}\n=== END INSTRUCTION ===`
+        : 'Organise these files into logical folders with clean names.',
+      `File types in this batch: ${typeHint}`,
       indexNote,
-      '\nFiles:',
+      '\nFiles to organise:',
       fileListStr
     ].filter(Boolean).join('\n');
 
     const msgs=[{role:'system',content:system},{role:'user',content:userMsg}];
-    const parsed=await callAI(key,model,msgs,outTokens);
-    if(parsed===null){btn.disabled=false;btn.innerHTML='Generate Preview';setProgress(0);setStep(2);return;}
+    let parsed=await callAI(key,model,msgs,outTokens);
+
+    // If failed — split this batch in half and retry each half
+    if(parsed===null){
+      const half=Math.ceil(batch.length/2);
+      const halves=[batch.slice(0,half), batch.slice(half)];
+      parsed={};
+      let retryOk=true;
+      for(let h=0;h<halves.length;h++){
+        const hb=halves[h];
+        setStatus(`Retrying with smaller batch (${h+1}/2)...`);
+        const hStr=hb.map((f,i)=>`${offset+(h*half)+i}|${f.split('/').pop()}`).join('\n');
+        const hNote=`Use index as JSON key: {"${offset+(h*half)}":{...}}`;
+        const hMsg=[
+          userInstr?`=== USER INSTRUCTION ===\n${userInstr}\n=== END ===`:'Organise these files.',
+          `File types: ${typeHint}`, hNote, '\nFiles:', hStr
+        ].filter(Boolean).join('\n');
+        const hp=await callAI(key,model,[{role:'system',content:system},{role:'user',content:hMsg}],outTokens);
+        if(hp===null){ retryOk=false; break; }
+        Object.assign(parsed,hp);
+      }
+      if(!retryOk){
+        // Both halves failed — skip batch, mark files as Unsorted and continue
+        for(const f of batch){
+          const k=f; allResults[k]={folder:'Unsorted',newName:f.split('/').pop()};
+        }
+        showToast(`Batch ${b+1} failed — files marked Unsorted`,'info');
+        continue;
+      }
+    }
 
     // Map index keys back to real filenames
     if(useIndex){
@@ -1629,7 +1648,7 @@ async function reviseFiles(){
   // use global origFileMap
   const msgs=[
     ...conversationHistory,
-    {role:'user',content:`Revise with these changes:\n${revision}\n\nReturn COMPLETE updated JSON for ALL files.`}
+    {role:'user',content:`=== REVISION INSTRUCTION (follow EXACTLY) ===\n${revision}\n=== END ===\n\nApply this revision and return COMPLETE updated JSON for ALL files. Do not skip any file.`}
   ];
 
   const parsed=await callAI(key,model,msgs,5000);
