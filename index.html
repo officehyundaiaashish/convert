@@ -1369,6 +1369,8 @@ Naming: ${caseInstr}
 - DEV PROJECT: Do NOT rename code files (.py .js .ts .html .css .json) — keep exact names` : ''}
 
 ─── OUTPUT FORMAT ───
+File list format: index|filename|YYYY-MM-DD (date = file's actual last-modified date from the device).
+Use this date for date-based folder organisation (by year, month, or event period).
 Return ONLY a raw JSON object. No markdown. No explanation. No code fences.
 You MUST include an entry for EVERY file — do not skip any.
 { "original_filename": { "folder": "Folder/Sub", "newName": "New Name.ext" } }
@@ -1543,9 +1545,24 @@ async function organiseFiles(){
     // Indexed format for large batches — saves tokens
     const useIndex=batch.length>80;
     const offset=b*BATCH;
+
+    // Format lastModified date from browser File object
+    const fmtDate=ts=>{
+      const d=new Date(ts);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    };
+
     const fileListStr=useIndex
-      ? batch.map((f,i)=>`${offset+i}|${f.split('/').pop()}`).join('\n')
-      : batch.join('\n');
+      ? batch.map((f,i)=>{
+          const file=origFileMap[f];
+          const date=file?.lastModified?fmtDate(file.lastModified):'';
+          return `${offset+i}|${f.split('/').pop()}${date?'|'+date:''}`;
+        }).join('\n')
+      : batch.map(f=>{
+          const file=origFileMap[f];
+          const date=file?.lastModified?fmtDate(file.lastModified):'';
+          return date?`${f} [${date}]`:f;
+        }).join('\n');
     const indexNote=useIndex
       ? `Use the index number as the JSON key: {"${offset}":{"folder":"...","newName":"..."}, ...}`
       : '';
@@ -1572,7 +1589,11 @@ async function organiseFiles(){
       for(let h=0;h<halves.length;h++){
         const hb=halves[h];
         setStatus(`Retrying with smaller batch (${h+1}/2)...`);
-        const hStr=hb.map((f,i)=>`${offset+(h*half)+i}|${f.split('/').pop()}`).join('\n');
+        const hStr=hb.map((f,i)=>{
+          const file=origFileMap[f];
+          const date=file?.lastModified?fmtDate(file.lastModified):'';
+          return `${offset+(h*half)+i}|${f.split('/').pop()}${date?'|'+date:''}`;
+        }).join('\n');
         const hNote=`Use index as JSON key: {"${offset+(h*half)}":{...}}`;
         const hMsg=[
           userInstr?`=== USER INSTRUCTION ===\n${userInstr}\n=== END ===`:'Organise these files.',
