@@ -1510,18 +1510,42 @@ async function callAnthropic(key, model, messages, maxTokens){
 async function callGemini(key, model, messages, maxTokens){
   const sys  = messages.find(m=>m.role==='system');
   const msgs = messages.filter(m=>m.role!=='system');
-  const contents = msgs.map(m=>({
-    role: m.role==='assistant'?'model':'user',
-    parts:[{text:m.content}]
-  }));
+
+  // Convert messages to Gemini parts format — handle both string and vision array content
+  const contents = msgs.map(m=>{
+    const role = m.role==='assistant'?'model':'user';
+    let parts;
+    if(typeof m.content === 'string'){
+      parts = [{text: m.content}];
+    } else if(Array.isArray(m.content)){
+      // Vision content array: [{type:'text',text:...}, {type:'image_url',image_url:{url:'data:...'}}]
+      parts = m.content.map(part=>{
+        if(part.type==='text') return {text: part.text};
+        if(part.type==='image_url'){
+          // Extract base64 from data URI
+          const dataUri = part.image_url?.url||'';
+          const match = dataUri.match(/^data:(image\/\w+);base64,(.+)$/);
+          if(match) return {inlineData:{mimeType:match[1], data:match[2]}};
+          return {text:'[image]'};
+        }
+        return {text: JSON.stringify(part)};
+      });
+    } else {
+      parts = [{text: String(m.content)}];
+    }
+    return {role, parts};
+  });
+
   const body={contents, generationConfig:{maxOutputTokens:maxTokens, temperature:0.15}};
-  if(sys) body.systemInstruction={parts:[{text:sys.content}]};
+  if(sys) body.systemInstruction={parts:[{text: typeof sys.content==='string'?sys.content:JSON.stringify(sys.content)}]};
   try{
     const url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
     const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await res.json();
     if(!res.ok) throw new Error(data.error?.message||`Gemini ${res.status}`);
-    const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
+    // Gemini can return multiple parts — join text parts
+    const parts = data.candidates?.[0]?.content?.parts||[];
+    const text = parts.map(p=>p.text||'').join('');
     const parsed=extractJSON(text);
     if(!parsed) throw new Error('Gemini returned unparseable JSON — try another model');
     return parsed;
@@ -1536,7 +1560,7 @@ async function callGemini(key, model, messages, maxTokens){
 // ═══════════════════════════════════════════
 
 // Compress image to tiny thumbnail → base64 (for vision AI)
-function imgToThumbnail(file, size=80){
+function imgToThumbnail(file, size=120){
   return new Promise(resolve=>{
     const url=URL.createObjectURL(file);
     const img=new Image();
@@ -1766,6 +1790,8 @@ async function callAI(key,model,messages,maxTokens=8000){
   const p=getProvider();
   if(p==='gemini')    return callGemini(key,model,messages,maxTokens);
   if(p==='anthropic') return callAnthropic(key,model,messages,maxTokens);
+  // For OpenAI-compatible APIs — content can be string or array (vision)
+  // Both formats are natively supported, pass through as-is
   try{
     const res=await fetch(getEndpoint(),{method:'POST',headers:getHeaders(key),
       body:JSON.stringify({model,messages,max_tokens:maxTokens,temperature:0.15})});
@@ -1910,8 +1936,12 @@ async function organiseFiles(){
 
     let msgs;
     if(useVision&&visionItems.length){
+      // Build vision content array — text first, then images
       const content=[{type:'text',text:userMsg}];
-      for(const f of visionItems) content.push({type:'image_url',image_url:{url:`data:image/jpeg;base64,${visionData[f]}`}});
+      for(const f of visionItems){
+        // data URI format — works for both OpenAI and Gemini (callGemini converts to inlineData)
+        content.push({type:'image_url',image_url:{url:`data:image/jpeg;base64,${visionData[f]}`}});
+      }
       msgs=[{role:'system',content:system},{role:'user',content}];
     } else {
       msgs=[{role:'system',content:system},{role:'user',content:userMsg}];
