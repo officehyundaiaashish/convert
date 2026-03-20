@@ -1233,16 +1233,28 @@ function toggleCustomFormat(){
 // ─── Case style ───
 function applyCase(name){
   const s=document.getElementById('caseStyle').value;
-  if(s==='custom') return name; // AI already applied custom format from prompt
+  if(s==='custom'||s==='original') return name;
   const dot=name.lastIndexOf('.');
   const ext=dot>0?name.slice(dot):'';
   const base=dot>0?name.slice(0,dot):name;
   let r;
-  if(s==='lower')r=base.toLowerCase();
-  else if(s==='upper')r=base.toUpperCase();
-  else if(s==='natural')r=base.replace(/\b\w/g,c=>c.toUpperCase());
-  else if(s==='sentence')r=base.charAt(0).toUpperCase()+base.slice(1).toLowerCase();
-  else r=base;
+  if(s==='lower'){ r=base.toLowerCase(); }
+  else if(s==='upper'){ r=base.toUpperCase(); }
+  else if(s==='sentence'){ r=base.charAt(0).toUpperCase()+base.slice(1).toLowerCase(); }
+  else {
+    // natural / Title Case — but preserve uppercase tokens (VINs, IDs, codes, acronyms)
+    // A token should stay uppercase if it was already all-caps AND length >= 2
+    // e.g. "WBA1234567" "VIN" "ID" "PDF" stay as-is, "the" → "The"
+    r = base.split(/(\s+)/).map(token => {
+      if(/^\s+$/.test(token)) return token; // preserve spaces
+      // All-caps alphanumeric token (VIN, ID, code) — keep as-is
+      if(/^[A-Z0-9]{2,}$/.test(token)) return token;
+      // Mixed with digits (e.g. WBA123ABC) — keep as-is
+      if(/^[A-Z][A-Z0-9]{2,}$/.test(token)) return token;
+      // Normal word — title case
+      return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+    }).join('');
+  }
   return r+ext;
 }
 function applyFolderCase(folder){
@@ -1365,6 +1377,7 @@ Naming: ${caseInstr}
 - Never put extension word in the filename (no "Report PDF" — just "Report")
 - No underscores between words — use spaces
 - Keep names short and recognisable — max 4-5 words
+- Preserve uppercase codes exactly as-is: VIN numbers, IDs, serial numbers, registration plates, acronyms (e.g. WBA1234ABC stays WBA1234ABC, not Wba1234abc)
 - NEVER change the file extension${devMode ? `
 - DEV PROJECT: Do NOT rename code files (.py .js .ts .html .css .json) — keep exact names` : ''}
 
@@ -1542,100 +1555,56 @@ async function organiseFiles(){
       : `Batch ${b+1} of ${batches.length} — ${Math.round(((b)/batches.length)*100)}% done...`);
     setProgress(10+(b/batches.length)*65);
 
-    // Indexed format for large batches — saves tokens
-    const useIndex=batch.length>80;
-    const offset=b*BATCH;
+    // Plain filenames + date — no indexing, direct match always works
+    const fmtDate=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 
-    // Format lastModified date from browser File object
-    const fmtDate=ts=>{
-      const d=new Date(ts);
-      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    };
-
-    const fileListStr=useIndex
-      ? batch.map((f,i)=>{
-          const file=origFileMap[f];
-          const date=file?.lastModified?fmtDate(file.lastModified):'';
-          return `${offset+i}|${f.split('/').pop()}${date?'|'+date:''}`;
-        }).join('\n')
-      : batch.map(f=>{
-          const file=origFileMap[f];
-          const date=file?.lastModified?fmtDate(file.lastModified):'';
-          return date?`${f} [${date}]`:f;
-        }).join('\n');
-    const indexNote=useIndex
-      ? `Use the index number as the JSON key: {"${offset}":{"folder":"...","newName":"..."}, ...}`
-      : '';
+    // Send just the basename as key — AI returns same basename, match is exact
+    const fileListStr=batch.map(f=>{
+      const base=f.split('/').pop();
+      const file=origFileMap[f];
+      const date=file?.lastModified?` [${fmtDate(file.lastModified)}]`:'';
+      return base+date;
+    }).join('\n');
 
     const userMsg=[
       userInstr
-        ? `=== USER INSTRUCTION (follow this EXACTLY and with highest priority) ===\n${userInstr}\n=== END INSTRUCTION ===`
+        ? `=== USER INSTRUCTION (follow EXACTLY, highest priority) ===\n${userInstr}\n=== END ===`
         : 'Organise these files into logical folders with clean names.',
-      `File types in this batch: ${typeHint}`,
-      indexNote,
-      '\nFiles to organise:',
+      `File types: ${typeHint}`,
+      `\nIMPORTANT: Use the exact filename (without the date in brackets) as the JSON key.`,
+      '\nFiles:',
       fileListStr
     ].filter(Boolean).join('\n');
 
     const msgs=[{role:'system',content:system},{role:'user',content:userMsg}];
     let parsed=await callAI(key,model,msgs,outTokens);
 
-    // If failed — split this batch in half and retry each half
+    // If failed — retry with half-sized batches
     if(parsed===null){
       const half=Math.ceil(batch.length/2);
-      const halves=[batch.slice(0,half), batch.slice(half)];
       parsed={};
-      let retryOk=true;
-      for(let h=0;h<halves.length;h++){
-        const hb=halves[h];
-        setStatus(`Retrying with smaller batch (${h+1}/2)...`);
-        const hStr=hb.map((f,i)=>{
-          const file=origFileMap[f];
-          const date=file?.lastModified?fmtDate(file.lastModified):'';
-          return `${offset+(h*half)+i}|${f.split('/').pop()}${date?'|'+date:''}`;
-        }).join('\n');
-        const hNote=`Use index as JSON key: {"${offset+(h*half)}":{...}}`;
+      for(const hb of [batch.slice(0,half),batch.slice(half)]){
+        const hStr=hb.map(f=>{const base=f.split('/').pop();const file=origFileMap[f];const date=file?.lastModified?` [${fmtDate(file.lastModified)}]`:'';return base+date;}).join('\n');
         const hMsg=[
           userInstr?`=== USER INSTRUCTION ===\n${userInstr}\n=== END ===`:'Organise these files.',
-          `File types: ${typeHint}`, hNote, '\nFiles:', hStr
+          `File types: ${typeHint}`,`\nUse exact filename as JSON key.`,'\nFiles:',hStr
         ].filter(Boolean).join('\n');
         const hp=await callAI(key,model,[{role:'system',content:system},{role:'user',content:hMsg}],outTokens);
-        if(hp===null){ retryOk=false; break; }
-        Object.assign(parsed,hp);
-      }
-      if(!retryOk){
-        // Both halves failed — skip batch, mark files as Unsorted and continue
-        for(const f of batch){
-          const k=f; allResults[k]={folder:'Unsorted',newName:f.split('/').pop()};
-        }
-        showToast(`Batch ${b+1} failed — files marked Unsorted`,'info');
-        continue;
+        if(hp) Object.assign(parsed,hp);
+        // If hp is null — those files will be caught by the fallback below
       }
     }
 
-    // Map index keys → real filenames, robust multi-strategy
-    if(useIndex){
-      for(const[rawKey,info] of Object.entries(parsed)){
-        const idx=parseInt(rawKey);
-        if(!isNaN(idx) && fileNames[idx]){
-          allResults[fileNames[idx]]=info;
-        } else {
-          // AI returned filename instead of index — fuzzy match by basename
-          const aiBase=rawKey.split('/').pop().toLowerCase();
-          const match=fileNames.find(f=>f.split('/').pop().toLowerCase()===aiBase);
-          allResults[match||rawKey]=info;
-        }
-      }
-    } else {
-      for(const[rawKey,info] of Object.entries(parsed)){
-        if(fileNames.includes(rawKey)){
-          allResults[rawKey]=info;
-        } else {
-          const aiBase=rawKey.split('/').pop().toLowerCase();
-          const match=fileNames.find(f=>f.split('/').pop().toLowerCase()===aiBase);
-          allResults[match||rawKey]=info;
-        }
-      }
+    // Match AI response back to full file paths
+    // Build a basename→fullpath map for this batch
+    const baseToFull={};
+    for(const f of batch) baseToFull[f.split('/').pop().toLowerCase()]=f;
+
+    for(const[aiKey,info] of Object.entries(parsed)){
+      // Strip date suffix AI may have included e.g. "photo.jpg [2024-01-01]"
+      const cleanKey=aiKey.replace(/\s*\[.*?\]\s*$/,'').trim();
+      const fullPath=baseToFull[cleanKey.toLowerCase()]||cleanKey;
+      allResults[fullPath]=info;
     }
   }
 
