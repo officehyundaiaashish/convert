@@ -1536,17 +1536,27 @@ async function callGemini(key, model, messages, maxTokens){
     return {role, parts};
   });
 
-  // Force JSON output — always set for Gemini to prevent markdown/prose wrapping
-  const body={contents, generationConfig:{maxOutputTokens:maxTokens, temperature:0.15, responseMimeType:'application/json'}};
-  if(sys) body.systemInstruction={parts:[{text: typeof sys.content==='string'?sys.content:JSON.stringify(sys.content)}]};
+  // responseMimeType:'application/json' forces clean JSON for text-only calls.
+  // Must NOT be set when inlineData (images) are present — Gemini 2.5 rejects that combo.
+  const hasVision=contents.some(c=>c.parts&&c.parts.some(p=>p.inlineData));
+  // Gemini 2.5 thinking models: cap thinking budget to avoid token overflow on this structured task
+  const isThinking = model.includes('2.5');
+  const body={contents, generationConfig:{maxOutputTokens:maxTokens, temperature:0.15,
+    ...(!hasVision?{responseMimeType:'application/json'}:{}),
+    ...(isThinking?{thinkingConfig:{thinkingBudget:0}}:{})
+  }};
+  const sysText = typeof sys?.content==='string' ? sys.content : sys ? JSON.stringify(sys.content) : '';
+  // For vision calls responseMimeType is disabled — reinforce JSON-only output via system prompt
+  const sysContent = hasVision ? sysText + '\n\nCRITICAL: Respond with ONLY a raw JSON object. No markdown. No text. No explanation. Start with { and end with }.' : sysText;
+  if(sys) body.systemInstruction={parts:[{text: sysContent}]};
   try{
     const url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
     const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await res.json();
     if(!res.ok) throw new Error(data.error?.message||`Gemini ${res.status}`);
-    // Gemini can return multiple parts — join text parts
+    // Gemini 2.5 thinking models return parts with thought:true — skip those, keep only text output parts
     const parts = data.candidates?.[0]?.content?.parts||[];
-    const text = parts.map(p=>p.text||'').join('');
+    const text = parts.filter(p=>!p.thought).map(p=>p.text||'').join('');
     const parsed=extractJSON(text);
     if(!parsed) throw new Error('Gemini returned unparseable JSON — try another model');
     return parsed;
