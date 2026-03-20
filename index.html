@@ -585,7 +585,7 @@ select{display:none !important;}
       <button class="btn btn-primary" id="organiseBtn" onclick="organiseFiles()" disabled>
         Generate Preview
       </button>
-      <button class="btn btn-secondary hidden" id="debugLogBtn" onclick="generateDebugLog()" title="Download what gets sent to AI">🪲 Debug Log</button>
+      <button class="btn btn-secondary" id="debugLogBtn" onclick="generateDebugLog()" title="Download what gets sent to AI">🪲 Debug Log</button>
       <button class="btn btn-secondary" onclick="clearAll()"><span class="ic ic-sm"><svg><use href="#ic-x"/></svg></span> Clear All</button>
       <span id="fileStatusInline" style="font-size:11px;color:var(--muted);flex:1;">No files selected</span>
     </div>
@@ -694,7 +694,6 @@ function setMode(mode){
   document.getElementById('modeNormal').classList.toggle('active', mode==='normal');
   document.getElementById('modeExp').classList.toggle('active', mode==='experimental');
   document.getElementById('expInfo').classList.toggle('show', mode==='experimental');
-  document.getElementById('debugLogBtn').classList.toggle('hidden', mode!=='experimental');
 }
 
 // ─── Theme ───
@@ -1539,8 +1538,8 @@ function imgToThumbnail(file, size=120){
       c2.height=Math.round(img.height*ratio);
       c2.getContext('2d').drawImage(img,0,0,c2.width,c2.height);
       URL.revokeObjectURL(url);
-      // Quality 0.70 JPEG — readable by vision AI, still compact
-      resolve(c2.toDataURL('image/jpeg',0.70).split(',')[1]);
+      // Heavy compression — quality 0.25, JPEG
+      resolve(c2.toDataURL('image/jpeg',0.25).split(',')[1]);
     };
     img.onerror=()=>{URL.revokeObjectURL(url);resolve(null);};
     img.src=url;
@@ -1688,20 +1687,8 @@ async function extractFileContext(file, useVision=false){
       const meta=await readImageMeta(file);
       if(meta) parts.push(meta);
       if(useVision){
-        const thumb=await imgToThumbnail(file,200);
+        const thumb=await imgToThumbnail(file,80);
         if(thumb) parts.push(`__VISION__${thumb}`); // marker for callAI
-      } else {
-        // No vision — at least extract dimensions so AI knows orientation/type
-        try{
-          const dims=await new Promise(res=>{
-            const url=URL.createObjectURL(file);
-            const img=new Image();
-            img.onload=()=>{ URL.revokeObjectURL(url); res(`${img.naturalWidth}x${img.naturalHeight}`); };
-            img.onerror=()=>{ URL.revokeObjectURL(url); res(null); };
-            img.src=url;
-          });
-          if(dims) parts.push(`Dimensions:${dims}`);
-        }catch{}
       }
     }
     else if(cat==='audio'){
@@ -1925,8 +1912,7 @@ async function organiseFiles(){
   const system=buildSystem();
   const isExp=currentMode==='experimental';
   const prov=document.getElementById('providerSelect').value;
-  // Vision supported by all major providers except Groq (text-only) and DeepSeek
-  const useVision=isExp&&!['groq','deepseek'].includes(prov);
+  const useVision=isExp&&(prov==='gemini'||prov==='openai');
   const fmtDate=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
   let allResults={};
   conversationHistory=[];
@@ -2431,7 +2417,7 @@ function showToast(msg,type='info'){
   clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('show'),3000);
 }
 
-// ─── Debug Log — shows exactly what gets sent to AI in experimental mode ───
+// ─── Debug Log — shows exactly what gets sent to AI (both modes) ───
 async function generateDebugLog(){
   if(!selectedFiles.length){showToast('Select files first','error');return;}
   const btn=document.getElementById('debugLogBtn');
@@ -2456,31 +2442,37 @@ async function generateDebugLog(){
   const typeHint=Object.entries(typeSummary).filter(([,v])=>v>0).map(([k,v])=>`${v} ${k}`).join(', ');
   const fmtDate=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 
-  // Extract all file contexts exactly as organiseFiles does
+  // Extract all file contexts — only in experimental mode (normal sends filenames only)
   const fileContext={}, visionData={};
   const extractionLog=[];
-  setStatus(`Debug: reading ${total} files...`);
-
-  for(let i=0;i<fileNames.length;i+=5){
-    await Promise.all(fileNames.slice(i,i+5).map(async fn=>{
-      const file=origFileMap[fn]; if(!file) return;
-      const raw=await extractFileContext(file,useVision);
-      const entry={file:fn, raw:raw||'(no context extracted)', hasVision:false, textCtx:''};
-      if(raw){
-        const vm=raw.match(/__VISION__([A-Za-z0-9+/=]+)/);
-        if(vm){
-          entry.hasVision=true;
-          entry.visionBytes=Math.round(vm[1].length*0.75); // approx bytes
-          entry.textCtx=raw.replace(/__VISION__[A-Za-z0-9+/=]+/,'').trim().replace(/\s*\|\s*$/,'').trim();
-          visionData[fn]=vm[1];
-          fileContext[fn]=entry.textCtx;
-        } else {
-          entry.textCtx=raw;
-          fileContext[fn]=raw;
+  if(isExp){
+    setStatus(`Debug: reading ${total} files...`);
+    for(let i=0;i<fileNames.length;i+=5){
+      await Promise.all(fileNames.slice(i,i+5).map(async fn=>{
+        const file=origFileMap[fn]; if(!file) return;
+        const raw=await extractFileContext(file,useVision);
+        const entry={file:fn, raw:raw||'(no context extracted)', hasVision:false, textCtx:''};
+        if(raw){
+          const vm=raw.match(/__VISION__([A-Za-z0-9+/=]+)/);
+          if(vm){
+            entry.hasVision=true;
+            entry.visionBytes=Math.round(vm[1].length*0.75);
+            entry.textCtx=raw.replace(/__VISION__[A-Za-z0-9+/=]+/,'').trim().replace(/\s*\|\s*$/,'').trim();
+            visionData[fn]=vm[1];
+            fileContext[fn]=entry.textCtx;
+          } else {
+            entry.textCtx=raw;
+            fileContext[fn]=raw;
+          }
         }
-      }
-      extractionLog.push(entry);
-    }));
+        extractionLog.push(entry);
+      }));
+    }
+  } else {
+    // Normal mode — no extraction, just record filenames for the log
+    for(const fn of fileNames){
+      extractionLog.push({file:fn, raw:'(normal mode — no extraction)', hasVision:false, textCtx:''});
+    }
   }
 
   // Build the exact file list string as organiseFiles does
@@ -2537,7 +2529,7 @@ ${sep}
 ${userMsg}
 
 ${sep}
-EXTRACTION DETAIL — per file
+EXTRACTION DETAIL — per file ${isExp?'':'(normal mode: filenames+dates only)'}
 ${sep}
 `;
 
