@@ -1613,26 +1613,41 @@ async function organiseFiles(){
       }
     }
 
-    // Map index keys back to real filenames
+    // Map index keys → real filenames, robust multi-strategy
     if(useIndex){
       for(const[rawKey,info] of Object.entries(parsed)){
         const idx=parseInt(rawKey);
-        const realName=!isNaN(idx)&&fileNames[idx]?fileNames[idx]:rawKey;
-        allResults[realName]=info;
+        if(!isNaN(idx) && fileNames[idx]){
+          allResults[fileNames[idx]]=info;
+        } else {
+          // AI returned filename instead of index — fuzzy match by basename
+          const aiBase=rawKey.split('/').pop().toLowerCase();
+          const match=fileNames.find(f=>f.split('/').pop().toLowerCase()===aiBase);
+          allResults[match||rawKey]=info;
+        }
       }
     } else {
-      Object.assign(allResults,parsed);
+      for(const[rawKey,info] of Object.entries(parsed)){
+        if(fileNames.includes(rawKey)){
+          allResults[rawKey]=info;
+        } else {
+          const aiBase=rawKey.split('/').pop().toLowerCase();
+          const match=fileNames.find(f=>f.split('/').pop().toLowerCase()===aiBase);
+          allResults[match||rawKey]=info;
+        }
+      }
     }
   }
 
   setProgress(80); setStatus('Applying rules...');
 
-  // Fallback for missed files
+  // Coverage check — case-insensitive basename match
   const covered=new Set();
   for(const k of Object.keys(allResults)){
+    const kBase=k.split('/').pop().toLowerCase();
     for(const f of selectedFiles){
       const fKey=f.webkitRelativePath||f.name;
-      if(fKey===k||f.name===k||f.name===k.split('/').pop()){covered.add(fKey);break;}
+      if(fKey===k || f.name.toLowerCase()===kBase){covered.add(fKey);break;}
     }
   }
   for(const f of selectedFiles){
