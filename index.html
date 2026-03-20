@@ -1593,7 +1593,9 @@ function buildSystem(){
 
   const devMode = isDevProject(selectedFiles);
 
-  return `You are a file organising assistant.
+  return `#1 RULE — ALWAYS READ AND FOLLOW THE USER PROMPT FIRST. The user prompt is the highest priority instruction. Everything else comes after.
+
+You are a file organising assistant.
 Your ONLY job: return a valid JSON object. Nothing else.
 No explanation. No markdown. No extra text. Just JSON.
 
