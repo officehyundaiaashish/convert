@@ -1765,7 +1765,9 @@ async function extractFileContext(file, useVision=false){
         const xmlFile=zip.files['word/document.xml'];
         if(xmlFile){
           const xml=await xmlFile.async('string');
-          const text=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,300);
+          const tokens=(xml.match(/<w:t[^>]*>([^<]+)<\/w:t>/g)||[])
+            .map(t=>t.replace(/<[^>]+>/g,'').trim()).filter(t=>t.length>0);
+          const text=tokens.join(' ').replace(/\s+/g,' ').trim().slice(0,300);
           if(text.length>10) parts.push(`Content:${text}`);
         }
       }catch{}
@@ -1773,19 +1775,24 @@ async function extractFileContext(file, useVision=false){
     else if(ext==='xlsx'){
       try{
         const zip=await JSZip.loadAsync(file);
+        const collected=[];
         const ss=zip.files['xl/sharedStrings.xml'];
         if(ss){
           const xml=await ss.async('string');
-          const text=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,300);
-          if(text.length>10) parts.push(`Content:${text}`);
-        } else {
-          const s1=zip.files['xl/worksheets/sheet1.xml'];
-          if(s1){
-            const xml=await s1.async('string');
-            const text=xml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,200);
-            if(text.length>10) parts.push(`Content:${text}`);
-          }
+          const tokens=(xml.match(/<t[^>]*>([^<]+)<\/t>/g)||[])
+            .map(t=>t.replace(/<[^>]+>/g,'').trim()).filter(t=>t.length>0);
+          collected.push(...tokens);
         }
+        const sheetKeys=Object.keys(zip.files).filter(k=>/xl\/worksheets\/sheet\d+\.xml/.test(k));
+        for(const sk of sheetKeys.slice(0,3)){
+          const xml=await zip.files[sk].async('string');
+          const tokens=(xml.match(/<(?:t|v)[^>]*>([^<]+)<\/(?:t|v)>/g)||[])
+            .map(t=>t.replace(/<[^>]+>/g,'').trim())
+            .filter(t=>t.length>0&&!/^\d+(\.\d+)?$/.test(t));
+          collected.push(...tokens);
+        }
+        const text=[...new Set(collected)].join(' ').replace(/\s+/g,' ').trim().slice(0,300);
+        if(text.length>10) parts.push(`Content:${text}`);
       }catch{}
     }
   }catch(e){}
