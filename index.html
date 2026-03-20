@@ -340,6 +340,15 @@ select{display:none !important;}
 [data-theme="dark"] .confirm-btn.danger{color:#e06060;}
 .confirm-btn.danger:hover{background:rgba(192,57,43,0.08);}
 
+/* Mode toggle */
+.mode-toggle{display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:10px;}
+.mode-btn{flex:1;padding:7px 10px;background:none;border:none;cursor:pointer;font-size:12px;font-weight:500;color:var(--muted);font-family:inherit;transition:all 0.15s;text-align:center;}
+.mode-btn.active{background:var(--accent);color:#fff;}
+.mode-btn.exp.active{background:linear-gradient(135deg,#7c3aed,#2563eb);}
+.exp-badge{display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;margin-left:5px;vertical-align:middle;}
+.exp-info{font-size:11px;color:var(--muted);padding:7px 10px;background:rgba(124,58,237,0.05);border:1px solid rgba(124,58,237,0.15);border-radius:7px;margin-bottom:8px;display:none;}
+.exp-info.show{display:block;}
+
 /* Inline SVG icons */
 .ic{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
 .ic svg{display:block;width:16px;height:16px;}
@@ -552,6 +561,15 @@ select{display:none !important;}
   <div class="card">
     <div class="card-label">Step 3 — Prompt</div>
 
+    <!-- Mode toggle -->
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="modeNormal" onclick="setMode('normal')">Normal</button>
+      <button class="mode-btn exp" id="modeExp" onclick="setMode('experimental')">Experimental <span class="exp-badge">β</span></button>
+    </div>
+    <div class="exp-info" id="expInfo">
+      ⚡ Reads file content — PDFs, images, audio, code, video metadata. Uses ~2× tokens. Best with Gemini or GPT-4o for vision. Max 100 files recommended.
+    </div>
+
 <div class="chips">
       <span class="chip" onclick="setChip(this)">By file type</span>
       <span class="chip" onclick="setChip(this)">By project</span>
@@ -668,6 +686,14 @@ let selectedFiles = [];
 let organiseResult = {};
 let conversationHistory = [];
 let origFileMap = {}; // global — persists for download
+let currentMode = 'normal'; // 'normal' | 'experimental'
+
+function setMode(mode){
+  currentMode = mode;
+  document.getElementById('modeNormal').classList.toggle('active', mode==='normal');
+  document.getElementById('modeExp').classList.toggle('active', mode==='experimental');
+  document.getElementById('expInfo').classList.toggle('show', mode==='experimental');
+}
 
 // ─── Theme ───
 function initTheme(){
@@ -1505,6 +1531,211 @@ async function callGemini(key, model, messages, maxTokens){
   }
 }
 
+// ═══════════════════════════════════════════
+// FILE CONTENT EXTRACTORS (Experimental mode)
+// ═══════════════════════════════════════════
+
+// Compress image to tiny thumbnail → base64 (for vision AI)
+function imgToThumbnail(file, size=80){
+  return new Promise(resolve=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{
+      const c2=document.createElement('canvas');
+      // Maintain aspect ratio
+      const ratio=Math.min(size/img.width, size/img.height);
+      c2.width=Math.round(img.width*ratio);
+      c2.height=Math.round(img.height*ratio);
+      c2.getContext('2d').drawImage(img,0,0,c2.width,c2.height);
+      URL.revokeObjectURL(url);
+      // Heavy compression — quality 0.25, JPEG
+      resolve(c2.toDataURL('image/jpeg',0.25).split(',')[1]);
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);resolve(null);};
+    img.src=url;
+  });
+}
+
+// Extract EXIF-like metadata from image via reading binary
+function readImageMeta(file){
+  return new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      try{
+        const view=new DataView(e.target.result);
+        // Look for EXIF GPS/date in JPEG
+        const bytes=new Uint8Array(e.target.result.slice(0,65536));
+        const str=String.fromCharCode(...bytes.slice(0,65536));
+        // Date pattern YYYY:MM:DD
+        const dateM=str.match(/\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}/);
+        // Camera model
+        const modelM=str.match(/(?:iPhone|Samsung|Pixel|Canon|Nikon|Sony|Xiaomi|OnePlus|Huawei)[^\x00]{0,20}/i);
+        const parts=[];
+        if(dateM) parts.push(`Date:${dateM[0].slice(0,10).replace(/:/g,'-')}`);
+        if(modelM) parts.push(`Cam:${modelM[0].trim().slice(0,30)}`);
+        resolve(parts.join(' ')||null);
+      }catch{resolve(null);}
+    };
+    reader.onerror=()=>resolve(null);
+    reader.readAsArrayBuffer(file.slice(0,65536));
+  });
+}
+
+// Extract first N chars from text-based files
+function readTextContent(file, maxChars=200){
+  return new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const text=(e.target.result||'').replace(/\s+/g,' ').trim().slice(0,maxChars);
+      resolve(text||null);
+    };
+    reader.onerror=()=>resolve(null);
+    reader.readAsText(file.slice(0,4096));
+  });
+}
+
+// Extract PDF text (first 200 words) — reads raw bytes, finds text streams
+function readPdfText(file){
+  return new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      try{
+        const text=e.target.result||'';
+        // Extract readable strings from PDF stream
+        const matches=text.match(/\(([^\)]{3,80})\)/g)||[];
+        const words=matches
+          .map(m=>m.slice(1,-1).replace(/[^\x20-\x7E]/g,'').trim())
+          .filter(w=>w.length>2&&/[a-zA-Z]/.test(w))
+          .slice(0,40)
+          .join(' ');
+        resolve(words.slice(0,300)||null);
+      }catch{resolve(null);}
+    };
+    reader.onerror=()=>resolve(null);
+    reader.readAsBinaryString(file.slice(0,65536));
+  });
+}
+
+// Extract ID3 tags from MP3
+function readAudioMeta(file){
+  return new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      try{
+        const buf=e.target.result;
+        const view=new DataView(buf);
+        // Check ID3v2 header
+        const bytes=new Uint8Array(buf);
+        if(bytes[0]===0x49&&bytes[1]===0x44&&bytes[2]===0x33){
+          const tags={};
+          let pos=10;
+          const size=((bytes[6]&0x7f)<<21)|((bytes[7]&0x7f)<<14)|((bytes[8]&0x7f)<<7)|(bytes[9]&0x7f);
+          while(pos<Math.min(size+10,buf.byteLength-10)){
+            const frameId=String.fromCharCode(bytes[pos],bytes[pos+1],bytes[pos+2],bytes[pos+3]);
+            const frameSize=(bytes[pos+4]<<24)|(bytes[pos+5]<<16)|(bytes[pos+6]<<8)|bytes[pos+7];
+            if(frameSize<=0||frameSize>10000) break;
+            if(['TIT2','TPE1','TALB','TYER','TDRC'].includes(frameId)){
+              const enc=bytes[pos+10];
+              const raw=new Uint8Array(buf,pos+11,frameSize-1);
+              tags[frameId]=new TextDecoder(enc===1?'utf-16':'utf-8').decode(raw).replace(/\x00/g,'').trim();
+            }
+            pos+=10+frameSize;
+          }
+          const parts=[];
+          if(tags.TIT2) parts.push(`Title:${tags.TIT2.slice(0,30)}`);
+          if(tags.TPE1) parts.push(`Artist:${tags.TPE1.slice(0,20)}`);
+          if(tags.TALB) parts.push(`Album:${tags.TALB.slice(0,20)}`);
+          if(tags.TYER||tags.TDRC) parts.push(`Year:${(tags.TYER||tags.TDRC).slice(0,4)}`);
+          resolve(parts.join(' ')||null);
+        } else resolve(null);
+      }catch{resolve(null);}
+    };
+    reader.onerror=()=>resolve(null);
+    reader.readAsArrayBuffer(file.slice(0,8192));
+  });
+}
+
+// Get video duration via HTMLVideoElement (local only, no upload)
+function readVideoDuration(file){
+  return new Promise(resolve=>{
+    const url=URL.createObjectURL(file);
+    const v=document.createElement('video');
+    v.preload='metadata';
+    v.onloadedmetadata=()=>{
+      const d=v.duration;
+      URL.revokeObjectURL(url);
+      if(isFinite(d)){
+        const h=Math.floor(d/3600),m=Math.floor((d%3600)/60),s=Math.floor(d%60);
+        resolve(h>0?`${h}h${m}m`:m>0?`${m}m${s}s`:`${s}s`);
+      } else resolve(null);
+    };
+    v.onerror=()=>{URL.revokeObjectURL(url);resolve(null);};
+    v.src=url;
+    setTimeout(()=>{URL.revokeObjectURL(url);resolve(null);},3000);
+  });
+}
+
+// Extract ZIP file list
+function readZipList(file){
+  return new Promise(async resolve=>{
+    try{
+      const zip=await JSZip.loadAsync(file);
+      const names=Object.keys(zip.files).filter(n=>!zip.files[n].dir).slice(0,20);
+      resolve(names.map(n=>n.split('/').pop()).join(', ')||null);
+    }catch{resolve(null);}
+  });
+}
+
+// Master extractor — decides what to extract per file type
+async function extractFileContext(file, useVision=false){
+  const cat=getFileCategory(file.name);
+  const ext=file.name.split('.').pop().toLowerCase();
+  const parts=[];
+
+  try{
+    if(cat==='image'){
+      const meta=await readImageMeta(file);
+      if(meta) parts.push(meta);
+      if(useVision){
+        const thumb=await imgToThumbnail(file,80);
+        if(thumb) parts.push(`__VISION__${thumb}`); // marker for callAI
+      }
+    }
+    else if(cat==='audio'){
+      const meta=await readAudioMeta(file);
+      if(meta) parts.push(meta);
+    }
+    else if(cat==='video'){
+      const dur=await readVideoDuration(file);
+      if(dur) parts.push(`Duration:${dur}`);
+      const mb=(file.size/1048576).toFixed(1);
+      parts.push(`Size:${mb}MB`);
+    }
+    else if(ext==='pdf'){
+      const text=await readPdfText(file);
+      if(text) parts.push(`Content:${text.slice(0,200)}`);
+    }
+    else if(['txt','md','csv','log','xml','html','htm'].includes(ext)){
+      const text=await readTextContent(file,150);
+      if(text) parts.push(`Content:${text}`);
+    }
+    else if(['js','ts','py','java','cpp','c','go','rb','swift','kt','rs','php'].includes(ext)){
+      const text=await readTextContent(file,120);
+      if(text) parts.push(`Code:${text}`);
+    }
+    else if(['json','yaml','yml','toml','env'].includes(ext)){
+      const text=await readTextContent(file,100);
+      if(text) parts.push(`Data:${text}`);
+    }
+    else if(['zip','rar','7z'].includes(ext)){
+      const list=await readZipList(file);
+      if(list) parts.push(`Contains:${list}`);
+    }
+  }catch(e){}
+
+  return parts.length ? parts.join(' | ') : null;
+}
+
 // ─── Robust JSON extraction ───
 function extractJSON(text){
   text = text.replace(/```json\s*/gi,'').replace(/```\s*/gi,'').trim();
@@ -1583,6 +1814,15 @@ async function organiseFiles(){
   const key=document.getElementById('apiKey').value.trim();
   if(!key){showToast('Select an agent first','error');return;}
   if(!selectedFiles.length){showToast('Select files first','error');return;}
+  if(currentMode==='experimental'&&selectedFiles.length>100){
+    const ok=await showConfirm({
+      title:`${selectedFiles.length} files in Experimental`,
+      msg:'Recommended max is 100. More files may hit free model token limits.',
+      okLabel:'Continue anyway',
+      danger:false
+    });
+    if(!ok) return;
+  }
   const userInstr=document.getElementById('userPrompt').value.trim();
   const model=document.getElementById('modelSelect').value;
   if(!model){showToast('Select a model first','error');return;}
@@ -1617,66 +1857,83 @@ async function organiseFiles(){
   const outTokens = Math.min(8000, BATCH * 22);
 
   const system=buildSystem();
+  const isExp=currentMode==='experimental';
+  const prov=document.getElementById('providerSelect').value;
+  const useVision=isExp&&(prov==='gemini'||prov==='openai');
+  const fmtDate=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
   let allResults={};
   conversationHistory=[];
 
+  // Experimental: pre-extract file content
+  const fileContext={}, visionData={};
+  if(isExp){
+    setStatus(`Reading contents... 0/${total}`);
+    let done=0;
+    for(let i=0;i<fileNames.length;i+=5){
+      await Promise.all(fileNames.slice(i,i+5).map(async fn=>{
+        const file=origFileMap[fn]; if(!file) return;
+        const ctx=await extractFileContext(file,useVision);
+        if(ctx){
+          const vm=ctx.match(/__VISION__([A-Za-z0-9+/=]+)/);
+          if(vm){ visionData[fn]=vm[1]; fileContext[fn]=ctx.replace(/__VISION__[A-Za-z0-9+/=]+/,'').trim().replace(/\s*\|\s*$/,'').trim(); }
+          else fileContext[fn]=ctx;
+        }
+        if(++done%10===0) setStatus(`Reading contents... ${done}/${total}`);
+      }));
+    }
+    setStatus('Contents read — organising...');
+  }
+
   for(let b=0;b<batches.length;b++){
     const batch=batches[b];
-    setStatus(batches.length===1
-      ? `Organising ${total} files...`
-      : `Batch ${b+1} of ${batches.length} — ${Math.round(((b)/batches.length)*100)}% done...`);
+    setStatus(batches.length===1?`Organising ${total} files...`:`Batch ${b+1} of ${batches.length} — ${Math.round((b/batches.length)*100)}% done...`);
     setProgress(10+(b/batches.length)*65);
 
-    // Plain filenames + date — no indexing, direct match always works
-    const fmtDate=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
-
-    // Send just the basename as key — AI returns same basename, match is exact
     const fileListStr=batch.map(f=>{
       const base=f.split('/').pop();
       const file=origFileMap[f];
       const date=file?.lastModified?` [${fmtDate(file.lastModified)}]`:'';
-      return base+date;
+      const ctx=fileContext[f]?` | ${fileContext[f]}`:'';
+      return base+date+ctx;
     }).join('\n');
 
+    const visionItems=batch.filter(f=>visionData[f]);
+
     const userMsg=[
-      userInstr
-        ? `═══ USER INSTRUCTION — execute this precisely ═══\n${userInstr}\n═══ END ═══`
-        : 'Organise these files into logical folders with clean names.',
+      userInstr?`USER INSTRUCTION (execute precisely):\n${userInstr}\nEND INSTRUCTION`:'Organise these files into logical folders with clean names.',
       `File types: ${typeHint}`,
-      `\nIMPORTANT: Use the exact filename (without the date in brackets) as the JSON key.`,
-      '\nFiles:',
-      fileListStr
+      isExp?'File content provided — use it for smarter naming and organisation.':'',
+      visionItems.length?`Image thumbnails included for: ${visionItems.map(f=>f.split('/').pop()).join(', ')}`:'',
+      `\nUse exact filename (without brackets) as the JSON key.`,
+      '\nFiles:', fileListStr
     ].filter(Boolean).join('\n');
 
-    const msgs=[{role:'system',content:system},{role:'user',content:userMsg}];
+    let msgs;
+    if(useVision&&visionItems.length){
+      const content=[{type:'text',text:userMsg}];
+      for(const f of visionItems) content.push({type:'image_url',image_url:{url:`data:image/jpeg;base64,${visionData[f]}`}});
+      msgs=[{role:'system',content:system},{role:'user',content}];
+    } else {
+      msgs=[{role:'system',content:system},{role:'user',content:userMsg}];
+    }
+
     let parsed=await callAI(key,model,msgs,outTokens);
 
-    // If failed — retry with half-sized batches
     if(parsed===null){
-      const half=Math.ceil(batch.length/2);
-      parsed={};
+      const half=Math.ceil(batch.length/2); parsed={};
       for(const hb of [batch.slice(0,half),batch.slice(half)]){
-        const hStr=hb.map(f=>{const base=f.split('/').pop();const file=origFileMap[f];const date=file?.lastModified?` [${fmtDate(file.lastModified)}]`:'';return base+date;}).join('\n');
-        const hMsg=[
-          userInstr?`=== USER INSTRUCTION ===\n${userInstr}\n=== END ===`:'Organise these files.',
-          `File types: ${typeHint}`,`\nUse exact filename as JSON key.`,'\nFiles:',hStr
-        ].filter(Boolean).join('\n');
+        const hStr=hb.map(f=>{const base=f.split('/').pop();const file=origFileMap[f];const date=file?.lastModified?` [${fmtDate(file.lastModified)}]`:'';const ctx=fileContext[f]?` | ${fileContext[f]}`:'';return base+date+ctx;}).join('\n');
+        const hMsg=[userInstr?`USER INSTRUCTION:\n${userInstr}\nEND`:'Organise these files.',`File types: ${typeHint}`,'\nUse exact filename as JSON key.','\nFiles:',hStr].filter(Boolean).join('\n');
         const hp=await callAI(key,model,[{role:'system',content:system},{role:'user',content:hMsg}],outTokens);
         if(hp) Object.assign(parsed,hp);
-        // If hp is null — those files will be caught by the fallback below
       }
     }
 
-    // Match AI response back to full file paths
-    // Build a basename→fullpath map for this batch
     const baseToFull={};
     for(const f of batch) baseToFull[f.split('/').pop().toLowerCase()]=f;
-
     for(const[aiKey,info] of Object.entries(parsed)){
-      // Strip date suffix AI may have included e.g. "photo.jpg [2024-01-01]"
       const cleanKey=aiKey.replace(/\s*\[.*?\]\s*$/,'').trim();
-      const fullPath=baseToFull[cleanKey.toLowerCase()]||cleanKey;
-      allResults[fullPath]=info;
+      allResults[baseToFull[cleanKey.toLowerCase()]||cleanKey]=info;
     }
   }
 
