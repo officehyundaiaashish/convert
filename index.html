@@ -140,6 +140,14 @@
     display: flex;
     gap: 10px;
     align-items: center;
+    flex-wrap: wrap;
+  }
+  .input-row input {
+    min-width: 0;
+    flex: 1 1 200px;
+  }
+  .input-row .btn {
+    flex-shrink: 0;
   }
 
   /* API Status */
@@ -770,11 +778,15 @@
         <div class="status-dot"></div>
         <span id="apiStatusText">Not tested</span>
       </div>
-      <div style="font-family:'Space Mono',monospace; font-size:10px; color:var(--muted);">
-        🔑 Get free key at <a href="https://openrouter.ai" target="_blank" style="color:var(--accent);">openrouter.ai</a>
-      </div>
     </div>
     <div class="settings-row">
+      <div class="setting-item">
+        <label>API Provider</label>
+        <select id="providerSelect" onchange="updateModels()">
+          <option value="openrouter">OpenRouter (Free)</option>
+          <option value="groq">Groq (Fast &amp; Free)</option>
+        </select>
+      </div>
       <div class="setting-item">
         <label>AI Model</label>
         <select id="modelSelect">
@@ -795,6 +807,10 @@
           <option value="work">Work vs Personal</option>
         </select>
       </div>
+    </div>
+    <div style="margin-top:10px; font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); line-height:2;">
+      <span id="apiKeyHint">🔑 OpenRouter: <a href="https://openrouter.ai" target="_blank" style="color:var(--accent);">openrouter.ai</a>
+      &nbsp;&nbsp;⚡ Groq: <a href="https://console.groq.com" target="_blank" style="color:var(--accent);">console.groq.com</a></span>
     </div>
   </div>
 
@@ -892,7 +908,58 @@ document.getElementById('folderInput').addEventListener('change', (e) => {
   handleFiles(files);
 });
 
-// ---- API TEST ----
+// ---- PROVIDER & MODEL SWITCHER ----
+const MODELS = {
+  openrouter: [
+    { value: 'meta-llama/llama-3.1-8b-instruct:free', label: 'Llama 3.1 8B (Free)' },
+    { value: 'mistralai/mistral-7b-instruct:free', label: 'Mistral 7B (Free)' },
+    { value: 'google/gemma-2-9b-it:free', label: 'Gemma 2 9B (Free)' },
+    { value: 'qwen/qwen-2.5-7b-instruct:free', label: 'Qwen 2.5 7B (Free)' },
+    { value: 'meta-llama/llama-3.2-3b-instruct:free', label: 'Llama 3.2 3B (Free)' },
+  ],
+  groq: [
+    { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant ⚡' },
+    { value: 'llama3-8b-8192', label: 'Llama 3 8B (8k ctx)' },
+    { value: 'llama3-70b-8192', label: 'Llama 3 70B (8k ctx)' },
+    { value: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B (32k ctx)' },
+    { value: 'gemma2-9b-it', label: 'Gemma 2 9B' },
+    { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile' },
+  ]
+};
+
+function getApiEndpoint() {
+  const provider = document.getElementById('providerSelect').value;
+  return provider === 'groq'
+    ? 'https://api.groq.com/openai/v1/chat/completions'
+    : 'https://openrouter.ai/api/v1/chat/completions';
+}
+
+function getApiHeaders(apiKey) {
+  const provider = document.getElementById('providerSelect').value;
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${apiKey}`
+  };
+  if (provider === 'openrouter') {
+    headers['HTTP-Referer'] = window.location.href;
+    headers['X-Title'] = 'FolderMind';
+  }
+  return headers;
+}
+
+function updateModels() {
+  const provider = document.getElementById('providerSelect').value;
+  const sel = document.getElementById('modelSelect');
+  sel.innerHTML = MODELS[provider].map(m =>
+    `<option value="${m.value}">${m.label}</option>`
+  ).join('');
+  resetApiStatus();
+  // Update placeholder hint
+  const hint = provider === 'groq'
+    ? '⚡ Groq key: console.groq.com — very fast responses!'
+    : '🔑 OpenRouter key: openrouter.ai — many free models';
+  document.getElementById('apiKeyHint').textContent = hint;
+}
 async function testApiKey() {
   const apiKey = document.getElementById('apiKey').value.trim();
   if (!apiKey) {
@@ -906,14 +973,9 @@ async function testApiKey() {
   setApiStatus('testing', 'Testing connection...');
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch(getApiEndpoint(), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': window.location.href,
-        'X-Title': 'FolderMind'
-      },
+      headers: getApiHeaders(apiKey),
       body: JSON.stringify({
         model: document.getElementById('modelSelect').value,
         messages: [{ role: 'user', content: 'Reply with just the word: OK' }],
@@ -922,19 +984,15 @@ async function testApiKey() {
     });
 
     const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message || `Error ${response.status}`);
 
-    if (!response.ok) {
-      throw new Error(data.error?.message || `Error ${response.status}`);
-    }
-
-    const reply = data.choices?.[0]?.message?.content || '';
-    const modelUsed = data.model || document.getElementById('modelSelect').value;
-    const shortModel = modelUsed.split('/').pop().replace(':free','');
-    setApiStatus('connected', `✅ Connected! Model: ${shortModel}`);
+    const shortModel = (data.model || document.getElementById('modelSelect').value).split('/').pop().replace(':free','');
+    const provider = document.getElementById('providerSelect').value;
+    setApiStatus('connected', `✅ Connected! ${provider === 'groq' ? '⚡ Groq' : 'OpenRouter'} — ${shortModel}`);
     showToast('API connected successfully!', 'success');
 
   } catch (err) {
-    setApiStatus('failed', `❌ Failed: ${err.message.slice(0, 60)}`);
+    setApiStatus('failed', `❌ Failed: ${err.message.slice(0, 55)}`);
     showToast('Connection failed — check your API key', 'error');
   }
 
@@ -1019,13 +1077,17 @@ function getFileIcon(filename) {
 }
 
 function sanitizeFilename(name) {
-  return name.replace(/[^a-zA-Z0-9._\-() ]/g, '_');
+  return name
+    .replace(/_/g, ' ')          // underscores → spaces
+    .replace(/[^\w\s.\-()]/g, '') // remove special chars (keep letters, digits, spaces, dots, dashes, parens)
+    .replace(/\s+/g, ' ')         // collapse multiple spaces
+    .trim();
 }
 
 async function organiseFiles() {
   const apiKey = document.getElementById('apiKey').value.trim();
   if (!apiKey) {
-    showToast('Please enter your OpenRouter API key', 'error');
+    showToast('Please enter your API key', 'error');
     return;
   }
   if (!selectedFiles.length) {
@@ -1078,26 +1140,23 @@ Rules:
 - Max 3 levels deep
 - Rename files to be clean, consistent, and descriptive (keep extension)
 - Remove random numbers/hashes from names when possible
-- Use Title_Case or descriptive names
+- Use natural words with spaces — NO underscores, NO dashes between words (e.g. "Invoice January 2024.pdf" not "Invoice_January_2024.pdf")
+- Folder names also use spaces, no underscores (e.g. "Bank Statements" not "Bank_Statements")
 
 Return ONLY a valid JSON object. No explanation. No markdown. Just JSON like:
 {
-  "original_filename.pdf": {"folder": "Finance/Invoices", "newName": "Invoice_January_2024.pdf"},
-  "IMG_20240101_123456.jpg": {"folder": "Photos/2024", "newName": "Photo_2024_01_01.jpg"}
+  "original_filename.pdf": {"folder": "Finance/Invoices", "newName": "Invoice January 2024.pdf"},
+  "IMG_20240101_123456.jpg": {"folder": "Photos/2024", "newName": "Beach Holiday Photo.jpg"}
 }
 
 Files to organise:
 ${batch.join('\n')}`;
 
+
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const response = await fetch(getApiEndpoint(), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': window.location.href,
-          'X-Title': 'FolderMind'
-        },
+        headers: getApiHeaders(apiKey),
         body: JSON.stringify({
           model: model,
           messages: [{ role: 'user', content: prompt }],
@@ -1265,14 +1324,24 @@ async function downloadZip() {
     let count = 0;
     for (const [orig, info] of Object.entries(organiseResult)) {
       const file = fileMap[orig];
-      if (!file) continue;
-
+      if (!file) {
+        // try matching just by filename as fallback
+        const baseName = orig.includes('/') ? orig.split('/').pop() : orig;
+        const fallback = Object.values(fileMap).find(f => f.name === baseName);
+        if (!fallback) continue;
+        const folder = (info.folder || 'Unsorted').replace(/\\/g, '/');
+        const newName = sanitizeFilename(info.newName || baseName);
+        const zipPath = `Organised/${folder}/${newName}`;
+        const arrayBuffer = await fallback.arrayBuffer();
+        zip.file(zipPath, arrayBuffer);
+        count++;
+        continue;
+      }
       const folder = (info.folder || 'Unsorted').replace(/\\/g, '/');
-      const newName = sanitizeFilename(info.newName || orig);
-      const path = `${folder}/${newName}`;
-
+      const newName = sanitizeFilename(info.newName || file.name);
+      const zipPath = `Organised/${folder}/${newName}`;
       const arrayBuffer = await file.arrayBuffer();
-      zip.file(path, arrayBuffer);
+      zip.file(zipPath, arrayBuffer);
       count++;
     }
 
