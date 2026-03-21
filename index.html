@@ -141,7 +141,9 @@ select{display:none !important;}
 .btn-secondary:not(:disabled):hover{border-color:var(--accent);color:var(--accent);}
 .btn-success{background:var(--accent3);color:white;font-weight:600;}
 .btn-success:not(:disabled):hover{opacity:0.88;}
-.btn-warn{background:#fff3cd;color:var(--warning);border:1px solid #ffd966;font-weight:500;}
+.btn-magic{background:linear-gradient(135deg,#7c3aed,#db2777);color:white;font-weight:600;}
+.btn-magic:not(:disabled):hover{opacity:0.88;}
+.btn-magic:disabled{opacity:0.4;cursor:not-allowed;}
 [data-theme="dark"] .btn-warn{background:#2a2000;color:var(--warning);border-color:#5a4000;}
 .btn-warn:not(:disabled):hover{opacity:0.85;}
 .btn-danger{background:#fff0f0;color:#c0392b;border:1px solid #ffcccc;font-size:11px;padding:4px 8px;}
@@ -190,7 +192,7 @@ select{display:none !important;}
 .tree-item.folder{cursor:pointer;}
 .tree-item.folder:hover{background:var(--surface2);}
 .tree-icon{font-size:13px;flex-shrink:0;width:16px;text-align:center;}
-.tree-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tree-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
 .tree-name.renamed{color:var(--accent3);}
 .tree-count{font-size:10px;color:var(--muted);flex-shrink:0;}
 .tree-children{overflow:hidden;transition:max-height 0.2s ease;}
@@ -270,6 +272,8 @@ select{display:none !important;}
 .file-item{display:flex;align-items:center;gap:6px;padding:6px 12px 6px 28px;border-top:1px solid var(--border);}
 .fi-icon{font-size:12px;flex-shrink:0;}
 .fi-orig{flex:1;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.fi-orig-hint{font-size:10px;color:var(--muted);margin-left:4px;flex-shrink:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:40%;min-width:0;}
+@media(max-width:500px){.fi-orig-hint{max-width:28%;}}
 .fi-arrow{color:var(--border);font-size:10px;flex-shrink:0;}
 .fi-new{font-size:11px;color:var(--accent3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:45%;}
 
@@ -738,6 +742,7 @@ select{display:none !important;}
       <button class="btn btn-primary" id="organiseBtn" onclick="organiseFiles()" disabled>
         Generate Preview
       </button>
+      <button class="btn btn-magic" id="magicBtn" onclick="aiMagicFiles()" disabled title="Pure AI — no rules, no post-processing. Your prompt + files → AI → done.">✨ AI Magic</button>
       <button class="btn btn-secondary" id="debugLogBtn" onclick="generateDebugLog()" title="Download what gets sent to AI"><span class="ic ic-sm"><svg><use href="#ic-bug"/></svg></span> Debug Log</button>
       <button class="btn btn-secondary" onclick="clearAll()"><span class="ic ic-sm"><svg><use href="#ic-x"/></svg></span> Clear All</button>
       <span id="fileStatusInline" style="font-size:11px;color:var(--muted);flex:1;">No files selected</span>
@@ -773,7 +778,10 @@ select{display:none !important;}
       <div class="revision-label">Revise</div>
       <div class="revision-row">
         <textarea id="revisionPrompt" name="revision-text" placeholder="What to change..." autocomplete="off" data-lpignore="true" data-form-type="other"></textarea>
-        <button class="btn btn-warn" id="reviseBtn" onclick="reviseFiles()"><span class="ic ic-sm"><svg><use href="#ic-refresh"/></svg></span> Revise</button>
+        <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0;">
+          <button class="btn btn-warn" id="reviseBtn" onclick="reviseFiles()"><span class="ic ic-sm"><svg><use href="#ic-refresh"/></svg></span> Revise</button>
+          <button class="btn btn-magic" id="magicReviseBtn" onclick="aiMagicRevise()" title="Pure AI revision — no rules applied">✨ AI Magic</button>
+        </div>
       </div>
     </div>
 
@@ -1220,6 +1228,7 @@ function handleFiles(files){
   });
   renderSelectedFiles();
   document.getElementById('organiseBtn').disabled = false;
+  document.getElementById('magicBtn').disabled = false;
   setStep(2);
   showToast(`${filtered.length} file${filtered.length!==1?'s':''} added`, 'info');
 }
@@ -1232,6 +1241,7 @@ function renderSelectedFiles(){
     wrap.classList.add('hidden');
     status.textContent = 'No files selected';
     document.getElementById('organiseBtn').disabled = true;
+    document.getElementById('magicBtn').disabled = true;
     return;
   }
   wrap.classList.remove('hidden');
@@ -2314,6 +2324,173 @@ async function reviseFiles(){
   showToast('Structure revised!','success');
 }
 
+// ─── AI Magic — pure prompt, no rules, no postProcess ───
+async function aiMagicFiles(){
+  const key=document.getElementById('apiKey').value.trim();
+  if(!key){showToast('Select an agent first','error');return;}
+  if(!selectedFiles.length){showToast('Select files first','error');return;}
+  const model=document.getElementById('modelSelect').value;
+  if(!model){showToast('Select a model first','error');return;}
+  const userInstr=document.getElementById('userPrompt').value.trim();
+
+  const btn=document.getElementById('magicBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Thinking...';
+  document.getElementById('progressWrap').classList.remove('hidden');
+  setProgress(10); setStep(3);
+
+  // Build file map
+  origFileMap={};
+  for(const f of selectedFiles) origFileMap[f.webkitRelativePath||f.name]=f;
+  const fileNames=selectedFiles.map(f=>f.webkitRelativePath||f.name);
+  const total=fileNames.length;
+
+  const typeSummary={};
+  for(const fname of fileNames){const cat=getFileCategory(fname.split('/').pop());typeSummary[cat]=(typeSummary[cat]||0)+1;}
+  const typeHint=Object.entries(typeSummary).filter(([,v])=>v>0).map(([k,v])=>`${v} ${k}`).join(', ');
+
+  // Experimental: extract file content
+  const isExp=currentMode==='experimental';
+  const prov=document.getElementById('providerSelect').value;
+  const useVision=isExp&&(prov==='gemini'||prov==='openai');
+  const fileContext={}, visionData={};
+  if(isExp){
+    setStatus(`Reading contents... 0/${total}`);
+    let done=0;
+    for(let i=0;i<fileNames.length;i+=5){
+      await Promise.all(fileNames.slice(i,i+5).map(async fn=>{
+        const file=origFileMap[fn]; if(!file) return;
+        const ctx=await extractFileContext(file,useVision);
+        if(ctx){
+          const vm=ctx.match(/__VISION__([A-Za-z0-9+/=]+)/);
+          if(vm){visionData[fn]=vm[1];fileContext[fn]=ctx.replace(/__VISION__[A-Za-z0-9+/=]+/,'').trim().replace(/\s*\|\s*$/,'').trim();}
+          else fileContext[fn]=ctx;
+        }
+        if(++done%10===0) setStatus(`Reading contents... ${done}/${total}`);
+      }));
+    }
+    setStatus('Contents read — asking AI...');
+  }
+
+  // Build pure prompt — no system rules, just user instruction + file list
+  const fmtDate=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+  const fileListStr=fileNames.map(f=>{
+    const base=f.split('/').pop();
+    const file=origFileMap[f];
+    const date=file?.lastModified?` [${fmtDate(file.lastModified)}]`:'';
+    const ctx=isExp&&fileContext[f]?` | ${fileContext[f]}`:'';
+    return base+date+ctx;
+  }).join('\n');
+
+  const systemPrompt=`You are a file renaming assistant. Return ONLY a valid JSON object, nothing else. No markdown, no explanation.
+Format: {"original_filename.ext": {"folder": "FolderName", "newName": "New Name.ext"}}
+Rules: keep the exact same file extension, include every file in the output.`;
+
+  const userMsg=`${userInstr||'Organise and rename these files intelligently.'}
+
+Files (${total} total, types: ${typeHint}):
+${fileListStr}`;
+
+  const visionItems=fileNames.filter(f=>visionData[f]);
+  let msgs;
+  if(useVision&&visionItems.length){
+    const contentArr=[{type:'text',text:userMsg}];
+    for(const f of visionItems) contentArr.push({type:'image_url',image_url:{url:`data:image/jpeg;base64,${visionData[f]}`}});
+    msgs=[{role:'system',content:systemPrompt},{role:'user',content:contentArr}];
+  } else {
+    msgs=[{role:'system',content:systemPrompt},{role:'user',content:userMsg}];
+  }
+
+  setProgress(30); setStatus(`Asking AI about ${total} files...`);
+  const BATCH=total<=100?total:100;
+  const outTokens=Math.min(8000,BATCH*22);
+  let parsed=await callAI(key,model,msgs,outTokens);
+
+  if(!parsed||Object.keys(parsed).length===0){
+    btn.disabled=false; btn.innerHTML='✨ AI Magic';
+    document.getElementById('progressWrap').classList.add('hidden');
+    return;
+  }
+
+  // Map AI keys back to full paths — same logic as download
+  const byFullPath={}, byNameAll={};
+  for(const f of selectedFiles){
+    const fk=f.webkitRelativePath||f.name;
+    byFullPath[fk]=f;
+    const nl=f.name.toLowerCase();
+    if(!byNameAll[nl])byNameAll[nl]=[];
+    byNameAll[nl].push(f);
+  }
+  const allResults={};
+  for(const[aiKey,info]of Object.entries(parsed)){
+    const cleanKey=aiKey.replace(/\s*\[.*?\]\s*$/,'').trim();
+    if(byFullPath[cleanKey]){allResults[cleanKey]=info;continue;}
+    const base=cleanKey.includes('/')?cleanKey.split('/').pop():cleanKey;
+    const candidates=byNameAll[base.toLowerCase()];
+    if(candidates&&candidates.length){
+      const fk=candidates[0].webkitRelativePath||candidates[0].name;
+      allResults[fk]=info;
+    } else {
+      allResults[cleanKey]=info;
+    }
+  }
+
+  // Any file AI missed — keep original name and put in Unsorted
+  for(const f of selectedFiles){
+    const fk=f.webkitRelativePath||f.name;
+    if(!allResults[fk]) allResults[fk]={folder:'Unsorted',newName:f.name};
+  }
+
+  // Apply directly — NO postProcess, NO rules
+  organiseResult=allResults;
+  conversationHistory=[
+    {role:'system',content:systemPrompt},
+    {role:'user',content:userMsg},
+    {role:'assistant',content:JSON.stringify(allResults).slice(0,6000)}
+  ];
+
+  setProgress(100);
+  renderResults(organiseResult);
+  setStatus(`Done — ${total} files organised.`);
+  btn.disabled=false; btn.innerHTML='✨ AI Magic';
+  setStep(4); showToast(`${total} files done!`,'success');
+}
+
+async function aiMagicRevise(){
+  const key=document.getElementById('apiKey').value.trim();
+  const revision=document.getElementById('revisionPrompt').value.trim();
+  if(!key){showToast('Enter API key first','error');return;}
+  if(!revision){showToast('Tell AI what to change','error');return;}
+  const model=document.getElementById('modelSelect').value;
+
+  const btn=document.getElementById('magicReviseBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  setStatus('Revising...');
+
+  const msgs=[
+    ...conversationHistory,
+    {role:'user',content:`${revision}\n\nReturn complete updated JSON for ALL files. Same format: {"filename.ext": {"folder": "...", "newName": "..."}}`}
+  ];
+
+  const parsed=await callAI(key,model,msgs,5000);
+  if(!parsed){btn.disabled=false;btn.innerHTML='✨ AI Magic';return;}
+
+  // Apply directly — NO postProcess
+  for(const[k,info]of Object.entries(parsed)){
+    if(organiseResult[k]!==undefined) organiseResult[k]=info;
+  }
+
+  conversationHistory.push(
+    {role:'user',content:revision},
+    {role:'assistant',content:JSON.stringify(parsed)}
+  );
+
+  renderResults(organiseResult);
+  setStatus('Revised!');
+  btn.disabled=false; btn.innerHTML='✨ AI Magic';
+  document.getElementById('revisionPrompt').value='';
+  showToast('Revised!','success');
+}
+
 // ─── Tab switcher ───
 function switchTab(name, btn){
   document.querySelectorAll('.struct-tab').forEach(t=>t.classList.remove('active'));
@@ -2491,7 +2668,7 @@ function renderResults(results){
         fr.style.paddingLeft=((depth+1)*14)+'px';
         fr.innerHTML=`<span class="tree-icon">${icon(f.newName)}</span>`+
           `<span class="tree-name${changed?' renamed':''}" title="${f.newName}">${f.newName}</span>`+
-          (changed?`<span style="font-size:10px;color:var(--muted);margin-left:4px;flex-shrink:0;" title="was: ${origBase}">← ${origBase}</span>`:'');
+          (changed?`<span class="fi-orig-hint" title="was: ${origBase}">← ${origBase}</span>`:'');
         children.appendChild(fr);
       }
     } else {
