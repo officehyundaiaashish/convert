@@ -2371,80 +2371,137 @@ async function aiMagicFiles(){
     setStatus('Contents read — asking AI...');
   }
 
-  // Build pure prompt — no system rules, just user instruction + file list
   const fmtDate=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
-  const fileListStr=fileNames.map(f=>{
-    const base=f.split('/').pop();
-    const file=origFileMap[f];
-    const date=file?.lastModified?` [${fmtDate(file.lastModified)}]`:'';
-    const ctx=isExp&&fileContext[f]?` | ${fileContext[f]}`:'';
-    return base+date+ctx;
-  }).join('\n');
+
+  // Style hint from dropdown
+  const caseVal=document.getElementById('caseStyle').value;
+  const customFmt=caseVal==='custom'?document.getElementById('customFormat').value.trim():'';
+  const caseLabel={
+    natural:'Title Case',original:'Keep original case',sentence:'Sentence case',
+    lower:'all lowercase',upper:'ALL UPPERCASE',custom:customFmt||'Title Case'
+  }[caseVal]||'Title Case';
 
   const systemPrompt=`You are a file renaming assistant. Return ONLY a valid JSON object, nothing else. No markdown, no explanation.
 Format: {"original_filename.ext": {"folder": "FolderName", "newName": "New Name.ext"}}
-Rules: keep the exact same file extension, include every file in the output.`;
 
-  const userMsg=`${userInstr||'Organise and rename these files intelligently.'}
+RULES (only these, nothing else):
+1. Keep the exact same file extension — never change it
+2. Include EVERY file from the input in the output — no file left behind
+3. Use spaces in filenames — never underscores or dashes
+4. Naming style: ${caseLabel}
+5. IDs, VIN numbers, registration numbers, invoice numbers, serial numbers, acronyms, and full-form abbreviations (like GST, PDF, HR, API, MOU, PO) must always be UPPERCASE regardless of style`;
 
-Files (${total} total, types: ${typeHint}):
-${fileListStr}`;
-
-  const visionItems=fileNames.filter(f=>visionData[f]);
-  let msgs;
-  if(useVision&&visionItems.length){
-    const contentArr=[{type:'text',text:userMsg}];
-    for(const f of visionItems) contentArr.push({type:'image_url',image_url:{url:`data:image/jpeg;base64,${visionData[f]}`}});
-    msgs=[{role:'system',content:systemPrompt},{role:'user',content:contentArr}];
-  } else {
-    msgs=[{role:'system',content:systemPrompt},{role:'user',content:userMsg}];
+  function buildFileListStr(names){
+    return names.map(f=>{
+      const base=f.split('/').pop();
+      const file=origFileMap[f];
+      const date=file?.lastModified?` [${fmtDate(file.lastModified)}]`:'';
+      const ctx=isExp&&fileContext[f]?` | ${fileContext[f]}`:'';
+      return base+date+ctx;
+    }).join('\n');
   }
 
-  setProgress(30); setStatus(`Asking AI about ${total} files...`);
-  const BATCH=total<=100?total:100;
-  const outTokens=Math.min(8000,BATCH*22);
-  let parsed=await callAI(key,model,msgs,outTokens);
+  // Helper: send one batch to AI and return parsed result
+  async function callMagicBatch(names, statusMsg){
+    setStatus(statusMsg);
+    const fileListStr=buildFileListStr(names);
+    const userMsg=`${userInstr||'Organise and rename these files intelligently.'}
 
-  if(!parsed||Object.keys(parsed).length===0){
+Files (${names.length} of ${total} total, types: ${typeHint}):
+${fileListStr}`;
+
+    const visionItems=names.filter(f=>visionData[f]);
+    let msgs;
+    if(useVision&&visionItems.length){
+      const contentArr=[{type:'text',text:userMsg}];
+      for(const f of visionItems) contentArr.push({type:'image_url',image_url:{url:`data:image/jpeg;base64,${visionData[f]}`}});
+      msgs=[{role:'system',content:systemPrompt},{role:'user',content:contentArr}];
+    } else {
+      msgs=[{role:'system',content:systemPrompt},{role:'user',content:userMsg}];
+    }
+    const outTokens=Math.min(8000,names.length*22);
+    return {parsed: await callAI(key,model,msgs,outTokens), userMsg};
+  }
+
+  // Helper: map AI response keys back to full file paths
+  function mapResults(parsed, allResults){
+    const byFullPath={}, byNameAll={};
+    for(const f of selectedFiles){
+      const fk=f.webkitRelativePath||f.name;
+      byFullPath[fk]=f;
+      const nl=f.name.toLowerCase();
+      if(!byNameAll[nl])byNameAll[nl]=[];
+      byNameAll[nl].push(f);
+    }
+    for(const[aiKey,info]of Object.entries(parsed)){
+      const cleanKey=aiKey.replace(/\s*\[.*?\]\s*$/,'').trim();
+      if(byFullPath[cleanKey]){allResults[cleanKey]=info;continue;}
+      const base=cleanKey.includes('/')?cleanKey.split('/').pop():cleanKey;
+      const candidates=byNameAll[base.toLowerCase()];
+      if(candidates&&candidates.length){
+        const fk=candidates[0].webkitRelativePath||candidates[0].name;
+        allResults[fk]=info;
+      } else {
+        allResults[cleanKey]=info;
+      }
+    }
+  }
+
+  setProgress(30);
+  const allResults={};
+  let firstUserMsg='';
+
+  // First pass — all files
+  const {parsed: parsed1, userMsg: um1}=await callMagicBatch(fileNames,`Asking AI about ${total} files...`);
+  firstUserMsg=um1;
+  if(!parsed1||Object.keys(parsed1).length===0){
     btn.disabled=false; btn.innerHTML='✨ AI Magic';
     document.getElementById('progressWrap').classList.add('hidden');
     return;
   }
+  mapResults(parsed1, allResults);
+  setProgress(65);
 
-  // Map AI keys back to full paths — same logic as download
-  const byFullPath={}, byNameAll={};
+  // Second pass — retry any files AI missed the first time
+  const missed=selectedFiles.filter(f=>!allResults[f.webkitRelativePath||f.name]);
+  if(missed.length>0){
+    setStatus(`Retrying ${missed.length} missed files...`);
+    const missedNames=missed.map(f=>f.webkitRelativePath||f.name);
+    const {parsed: parsed2}=await callMagicBatch(missedNames,`Retrying ${missed.length} missed files...`);
+    if(parsed2&&Object.keys(parsed2).length>0) mapResults(parsed2, allResults);
+    setProgress(85);
+
+    // Third pass — any still missed after retry → AI one more time in smaller chunks
+    const stillMissed=selectedFiles.filter(f=>!allResults[f.webkitRelativePath||f.name]);
+    if(stillMissed.length>0){
+      setStatus(`Final pass for ${stillMissed.length} remaining files...`);
+      for(let i=0;i<stillMissed.length;i+=20){
+        const chunk=stillMissed.slice(i,i+20).map(f=>f.webkitRelativePath||f.name);
+        const {parsed: parsed3}=await callMagicBatch(chunk,`Final pass ${i+1}–${Math.min(i+20,stillMissed.length)}...`);
+        if(parsed3&&Object.keys(parsed3).length>0) mapResults(parsed3, allResults);
+      }
+    }
+    setProgress(95);
+  }
+
+  // Absolute last resort — if AI still missed anything after 3 passes, re-ask with original name preserved
   for(const f of selectedFiles){
     const fk=f.webkitRelativePath||f.name;
-    byFullPath[fk]=f;
-    const nl=f.name.toLowerCase();
-    if(!byNameAll[nl])byNameAll[nl]=[];
-    byNameAll[nl].push(f);
-  }
-  const allResults={};
-  for(const[aiKey,info]of Object.entries(parsed)){
-    const cleanKey=aiKey.replace(/\s*\[.*?\]\s*$/,'').trim();
-    if(byFullPath[cleanKey]){allResults[cleanKey]=info;continue;}
-    const base=cleanKey.includes('/')?cleanKey.split('/').pop():cleanKey;
-    const candidates=byNameAll[base.toLowerCase()];
-    if(candidates&&candidates.length){
-      const fk=candidates[0].webkitRelativePath||candidates[0].name;
-      allResults[fk]=info;
-    } else {
-      allResults[cleanKey]=info;
+    if(!allResults[fk]){
+      // Try to infer a sensible folder from file type rather than "Unsorted"
+      const catFolders={image:'Images',video:'Videos',audio:'Audio',document:'Documents',
+        archive:'Archives',code:'Code',spreadsheet:'Spreadsheets',presentation:'Presentations',
+        icon:'Icons',shortcut:'Shortcuts',executable:'Software',font:'Fonts',data:'Data'};
+      const cat=getFileCategory(f.name);
+      allResults[fk]={folder:catFolders[cat]||'Other',newName:f.name};
     }
   }
 
-  // Any file AI missed — keep original name and put in Unsorted
-  for(const f of selectedFiles){
-    const fk=f.webkitRelativePath||f.name;
-    if(!allResults[fk]) allResults[fk]={folder:'Unsorted',newName:f.name};
-  }
-
-  // Apply directly — NO postProcess, NO rules
+  // Apply directly — NO postProcess, NO rules beyond what AI returned
   organiseResult=allResults;
   conversationHistory=[
     {role:'system',content:systemPrompt},
-    {role:'user',content:userMsg},
+    {role:'user',content:firstUserMsg},
     {role:'assistant',content:JSON.stringify(allResults).slice(0,6000)}
   ];
 
