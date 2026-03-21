@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>FolderMind — AI File Organiser</title>
 <!-- PWA Meta Tags -->
 <meta name="description" content="AI-powered file organizer - Organize your files intelligently with AI">
-<meta name="theme-color" content="#f7f7f5" id="theme-color-meta">
+<meta name="theme-color" content="#ffffff" id="theme-color-meta">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="FolderMind">
@@ -46,10 +46,22 @@
   --shadow:0 1px 3px rgba(0,0,0,0.4);
 }
 *{margin:0;padding:0;box-sizing:border-box;}
+/* Suppress browser autofill background on all inputs globally */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px var(--surface2) inset !important;
+  box-shadow: 0 0 0px 1000px var(--surface2) inset !important;
+  -webkit-text-fill-color: var(--text) !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
 body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;min-height:100vh;overflow-x:hidden;transition:background 0.2s,color 0.2s;font-size:14px;line-height:1.5;}
 
 
-.container{max-width:680px;margin:0 auto;padding:32px 16px 80px;position:relative;}
+.container{max-width:680px;margin:0 auto;padding:16px 16px 80px;padding-top:max(16px,env(safe-area-inset-top));position:relative;}
 
 
 /* Header */
@@ -242,6 +254,7 @@ select{display:none !important;}
 
 /* File tree */
 .file-tree{border:1px solid var(--border);border-radius:8px;overflow:hidden;max-height:520px;overflow-y:auto;background:var(--surface);}
+@media(max-width:500px){.file-tree{max-height:240px;}}
 .file-tree::-webkit-scrollbar{width:3px;}
 .file-tree::-webkit-scrollbar-thumb{background:var(--border);}
 .folder-group{border-bottom:1px solid var(--border);}
@@ -601,7 +614,7 @@ select{display:none !important;}
       <!-- Custom format field -->
       <div id="customFormatWrap" class="hidden" style="margin-top:8px;">
         <label style="font-size:11px;color:var(--muted);font-weight:500;display:block;margin-bottom:4px;">Custom naming instruction</label>
-        <input type="text" id="customFormat" name="format-style" placeholder="e.g. YYYY-MM-DD prefix  /  camelCase  /  short snake_case" autocomplete="off" />
+        <input type="text" id="customFormat" name="format-style" placeholder="e.g. YYYY-MM-DD prefix  /  camelCase  /  short snake_case" autocomplete="off" data-lpignore="true" data-form-type="other" />
       </div>
     </div>
 
@@ -635,14 +648,14 @@ select{display:none !important;}
       <div class="modal-section">
         <div class="modal-section-label">Add Key</div>
         <div class="modal-input-row">
-          <input type="password" id="modalApiKey" name="api-token-field" placeholder="Paste API key" autocomplete="off" data-form-type="other" oninput="autoDetectProvider()" />
+          <input type="text" id="modalApiKey" name="api-token-field" placeholder="Paste API key" autocomplete="one-time-code" data-form-type="other" data-lpignore="true" spellcheck="false" style="font-family:monospace;-webkit-text-security:disc;" oninput="autoDetectProvider()" />
           <button class="modal-eye-btn" onclick="toggleModalKeyVis()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
         </div>
         <div id="detectedProvider" class="detected-provider hidden"></div>
         <div class="modal-input-row" style="margin-top:6px;">
-          <input type="text" id="modalNickname" name="agent-label" placeholder="Nickname (optional)" autocomplete="off" />
+          <input type="text" id="modalNickname" name="agent-label" placeholder="Nickname (optional)" autocomplete="off" data-lpignore="true" data-form-type="other" />
           <button class="btn btn-primary" id="modalAddBtn" onclick="addAgent()" disabled style="flex-shrink:0;">Add</button>
         </div>
       </div>
@@ -719,7 +732,7 @@ select{display:none !important;}
       <span class="chip" onclick="setChip(this)">Short names only</span>
     </div>
 
-    <textarea id="userPrompt" name="instruction-text" placeholder="Enter your prompt..." autocomplete="off"></textarea>
+    <textarea id="userPrompt" name="instruction-text" placeholder="Enter your prompt..." autocomplete="off" data-lpignore="true" data-form-type="other"></textarea>
 
     <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
       <button class="btn btn-primary" id="organiseBtn" onclick="organiseFiles()" disabled>
@@ -759,7 +772,7 @@ select{display:none !important;}
     <div class="revision-box">
       <div class="revision-label">Revise</div>
       <div class="revision-row">
-        <textarea id="revisionPrompt" name="revision-text" placeholder="What to change..." autocomplete="off"></textarea>
+        <textarea id="revisionPrompt" name="revision-text" placeholder="What to change..." autocomplete="off" data-lpignore="true" data-form-type="other"></textarea>
         <button class="btn btn-warn" id="reviseBtn" onclick="reviseFiles()"><span class="ic ic-sm"><svg><use href="#ic-refresh"/></svg></span> Revise</button>
       </div>
     </div>
@@ -846,7 +859,7 @@ function initTheme(){
     : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
   // Update Android status bar color to match app theme
   const tc = document.getElementById('theme-color-meta');
-  if(tc) tc.content = saved==='dark' ? '#0f0f0f' : '#f7f7f5';
+  if(tc) tc.content = saved==='dark' ? '#0f0f0f' : '#ffffff';
 }
 function toggleTheme(){
   const next = document.body.getAttribute('data-theme')==='dark'?'light':'dark';
@@ -922,7 +935,13 @@ function autoDetectProvider(){
 
 function toggleModalKeyVis(){
   const inp = document.getElementById('modalApiKey');
-  inp.type = inp.type==='password'?'text':'password';
+  // Field starts masked (webkit-text-security:disc). Toggle to show/hide.
+  const isHidden = inp.style.webkitTextSecurity!=='none'&&inp.style.webkitTextSecurity!=='';
+  if(isHidden){
+    inp.style.webkitTextSecurity='none';
+  } else {
+    inp.style.webkitTextSecurity='disc';
+  }
 }
 
 async function addAgent(){
@@ -2236,8 +2255,12 @@ async function organiseFiles(){
   organiseResult=postProcess(allResults);
 
   // Sync selectedFiles — remove any AI-deleted files
-  const keptKeys=new Set(Object.keys(organiseResult).map(k=>k.split('/').pop().toLowerCase()));
-  selectedFiles=selectedFiles.filter(f=>keptKeys.has(f.name.toLowerCase()));
+  const keptKeys=new Set(Object.keys(organiseResult));
+  const keptBasenames=new Set(Object.keys(organiseResult).map(k=>k.split('/').pop().toLowerCase()));
+  selectedFiles=selectedFiles.filter(f=>{
+    const fKey=f.webkitRelativePath||f.name;
+    return keptKeys.has(fKey)||keptBasenames.has(f.name.toLowerCase());
+  });
   renderSelectedFiles();
 
   setProgress(100);
@@ -2523,27 +2546,31 @@ async function downloadZip(){
   try{
     const zip=new JSZip();
 
-    // Build multiple lookup indexes for robust matching
+    // Build lookup indexes — byFullPath is primary; byName stores ALL files per name to handle duplicates
     const byFullPath={};   // "Folder/file.pdf" -> File
-    const byName={};       // "file.pdf" -> File (last wins, ok for unique names)
-    const byNameLower={};  // "file.pdf" lowercase -> File
+    const byNameAll={};    // "file.pdf" lowercase -> File[] (all files with that name)
+    const usedFiles=new Set(); // track already-consumed files for duplicate-name resolution
 
     for(const f of selectedFiles){
       const fullKey = f.webkitRelativePath || f.name;
       byFullPath[fullKey] = f;
-      byName[f.name] = f;
-      byNameLower[f.name.toLowerCase()] = f;
+      const nl = f.name.toLowerCase();
+      if(!byNameAll[nl]) byNameAll[nl]=[];
+      byNameAll[nl].push(f);
     }
 
     function findFile(origKey){
-      // Strategy 1: exact full path match
+      // Strategy 1: exact full path match (most reliable)
       if(byFullPath[origKey]) return byFullPath[origKey];
-      // Strategy 2: just the filename part
+      // Strategy 2: basename match — for duplicate names, pick first unused
       const base = origKey.includes('/') ? origKey.split('/').pop() : origKey;
-      if(byName[base]) return byName[base];
-      // Strategy 3: case-insensitive filename
-      if(byNameLower[base.toLowerCase()]) return byNameLower[base.toLowerCase()];
-      // Strategy 4: fuzzy — original name without extension matches
+      const candidates = byNameAll[base.toLowerCase()];
+      if(candidates){
+        const unused = candidates.find(f=>!usedFiles.has(f));
+        if(unused){ usedFiles.add(unused); return unused; }
+        return candidates[0]; // fallback: allow re-use rather than miss
+      }
+      // Strategy 3: fuzzy — original name without extension
       const baseNoExt = base.replace(/\.[^.]+$/, '').toLowerCase();
       const found = selectedFiles.find(f => f.name.replace(/\.[^.]+$/, '').toLowerCase() === baseNoExt);
       return found || null;
@@ -2822,7 +2849,7 @@ function getManifestJson(){
     scope: location.pathname.replace(/[^/]*$/, '') || '/',
     display: 'standalone',
     background_color: '#f7f7f5',
-    theme_color: '#f7f7f5',
+    theme_color: '#ffffff',
     icons: [
       { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
@@ -2919,7 +2946,7 @@ function generateManifest(){
     scope: scope,
     display: 'standalone',
     background_color: '#f7f7f5',
-    theme_color: '#f7f7f5',
+    theme_color: '#ffffff',
     icons: [
       { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
